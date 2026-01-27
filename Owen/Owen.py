@@ -31,7 +31,7 @@ CUBE_SIZE = 36
 player = pygame.Rect(150, 550, CUBE_SIZE, CUBE_SIZE)
 
 player_img = pygame.image.load(
-    "Charlotte/PlayerIdleNoMask.png"
+    "Q:\Veilshift(UPDATED)\Veilshift\Charlotte\PlayerIdleNoMask.png"
 ).convert_alpha()
 player_img = pygame.transform.scale(player_img, (CUBE_SIZE, CUBE_SIZE))
 
@@ -239,7 +239,7 @@ while running:
 
 
     # -------- JUMP --------
-    if keys[pygame.K_SPACE] or keys[pygame.K_w]:
+    if keys[pygame.K_SPACE]:
         if on_ground and not jump_held:
             vel_y = -JUMP
             jump_held = True
