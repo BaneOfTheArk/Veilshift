@@ -14,8 +14,11 @@ screen = pygame.display.set_mode(
     pygame.SCALED | pygame.FULLSCREEN
 )
 
+debug_light = False
+
+
 # ---------------- COLORS ----------------
-AMBIENT_DARK = (18, 18, 22)
+AMBIENT_DARK = (15, 15, 20)
 
 MASK_INFO = {
     0: {"color": (200, 80, 80)},
@@ -43,67 +46,67 @@ JUMP = 14
 GRAVITY = 0.7
 on_ground = False
 
-# Facing / vision
-facing_angle = 0.0       # current angle (degrees)
-target_angle = 0.0       # target angle
-
-# Jump handling
+facing_angle = 0.0
+target_angle = 0.0
 jump_held = False
 
 # ---------------- MASK ----------------
 current_mask = 0
 
 # ---------------- LIGHT ----------------
-LIGHT_RADIUS = 280
+LIGHT_RADIUS = 300
 FOV_ANGLE = 90
-RAY_COUNT = 45
+RAY_COUNT = 50
 RAY_STEP = 4
 
 light_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-dark_surface = pygame.Surface((WIDTH, HEIGHT))  # background darkness
+dark_surface = pygame.Surface((WIDTH, HEIGHT))
 
 # ---------------- PLATFORM ----------------
 class Platform:
-    def __init__(self, rect, masks):
+    def __init__(self, rect, visible_masks=None):
         self.rect = pygame.Rect(rect)
-        self.masks = masks
+        self.visible_masks = visible_masks  
 
-    def active(self):
-        return current_mask in self.masks
+    def visible(self):
+        if self.visible_masks is None:
+            return True
+        return current_mask in self.visible_masks
 
-    def draw(self, target_surface=None):
-        if not self.active():
+    def draw(self, surface):
+        if not self.visible():
             return
+
         base = MASK_INFO[current_mask]["color"]
         color = tuple(min(255, c + 20) for c in base)
-        if target_surface:
-            pygame.draw.rect(target_surface, color, self.rect, border_radius=4)
-        else:
-            pygame.draw.rect(screen, color, self.rect, border_radius=4)
+        pygame.draw.rect(surface, color, self.rect, border_radius=4)
+
 
 # ---------------- LEVEL ----------------
-def load_level():
-    return [
-        Platform((0, 680, 1280, 40), [0,1,2]),
-        Platform((200, 580, 200, 25), [0]),
-        Platform((460, 500, 180, 25), [1]),
-        Platform((700, 420, 180, 25), [2]),
-        Platform((960, 340, 160, 25), [0,2]),
-        Platform((320, 360, 160, 25), [1,2]),
-        Platform((120, 280, 160, 25), [0]),
-        Platform((0, 0, 40, 720), [0,1,2]),
-        Platform((1240, 0, 40, 720), [0,1,2]),
-    ]
+platforms = [
+    # Floor (platform-only)
+    
+    Platform((200, 580, 200, 25), [0]),
+    Platform((460, 500, 180, 25), [0]),
+    Platform((700, 420, 180, 25), [0]),
+    Platform((960, 340, 160, 25), [0]),
+    Platform((320, 360, 160, 25), [0]),
+    Platform((120, 280, 160, 25), [0]),
 
-platforms = load_level()
+    # Walls (ALWAYS visible)
+    Platform((0, 0, 40, 720), None),
+    Platform((1240, 0, 40, 720), None),
+    Platform((0, 680, 1280, 40), None),
+]
 
-# ---------------- COLLISION ----------------
+
+# ---------------- COLLISION (ALWAYS ACTIVE) ----------------
 def move_and_collide(rect, dx, dy):
     global on_ground
 
     rect.x += int(dx)
     for p in platforms:
-        if p.active() and rect.colliderect(p.rect):
+        if rect.colliderect(p.rect):
             if dx > 0:
                 rect.right = p.rect.left
             elif dx < 0:
@@ -112,7 +115,7 @@ def move_and_collide(rect, dx, dy):
     rect.y += int(dy)
     on_ground = False
     for p in platforms:
-        if p.active() and rect.colliderect(p.rect):
+        if rect.colliderect(p.rect):
             if dy > 0:
                 rect.bottom = p.rect.top
                 on_ground = True
@@ -130,13 +133,20 @@ def cast_ray(origin, angle):
     dx = math.cos(rad)
     dy = math.sin(rad)
 
+    last_point = (ox + dx * LIGHT_RADIUS, oy + dy * LIGHT_RADIUS)
+
     for i in range(0, LIGHT_RADIUS, RAY_STEP):
         px = ox + dx * i
         py = oy + dy * i
+
         for p in platforms:
-            if p.active() and p.rect.collidepoint(px, py):
+            # Light ONLY stops on VISIBLE platforms
+            if p.visible() and p.rect.collidepoint(px, py):
                 return (px, py)
-    return (ox + dx * LIGHT_RADIUS, oy + dy * LIGHT_RADIUS)
+
+    # 🔑 If NOTHING visible was hit, FORCE full extension
+    return last_point
+
 
 def get_vision_polygon(origin):
     points = [origin]
@@ -146,38 +156,37 @@ def get_vision_polygon(origin):
         points.append(cast_ray(origin, start + i * step))
     return points
 
+
 def draw_light(origin):
-    # Fill dark surface with ambient darkness
+    if debug_light:
+        # FULL LIGHT MODE: everything is bright
+        screen.fill((255, 255, 255))
+        for p in platforms:
+            p.draw(screen)  # draw all platforms normally
+        return
+
     dark_surface.fill(AMBIENT_DARK)
 
-    # Draw platforms for mask effect
+    # Draw ONLY visible platforms
     for p in platforms:
         p.draw(dark_surface)
 
-    # Clear light surface
     light_surface.fill((0,0,0,0))
 
-    # Draw gradient spotlight polygon
-    polygon = get_vision_polygon(origin)
-    # Draw solid polygon first
-    pygame.draw.polygon(light_surface, (255,255,180,180), polygon)
+    poly = get_vision_polygon(origin)
+    pygame.draw.polygon(light_surface, (255,255,220,200), poly)
 
-    # Apply radial gradient fade along the cone
-    # Create radial mask
     gradient = pygame.Surface((LIGHT_RADIUS*2, LIGHT_RADIUS*2), pygame.SRCALPHA)
     center = LIGHT_RADIUS
     for r in range(LIGHT_RADIUS, 0, -1):
-        alpha = int(180 * (r / LIGHT_RADIUS))
-        pygame.draw.circle(gradient, (255,255,180,alpha), (center,center), r)
-    gradient_rot = pygame.transform.rotate(gradient, -facing_angle)
-    gradient_rect = gradient_rot.get_rect(center=origin)
+        alpha = int(200 * (r / LIGHT_RADIUS))
+        pygame.draw.circle(gradient, (255,255,220,alpha), (center,center), r)
 
-    light_surface.blit(gradient_rot, gradient_rect.topleft, special_flags=pygame.BLEND_RGBA_MULT)
+    rot = pygame.transform.rotate(gradient, -facing_angle)
+    rect = rot.get_rect(center=origin)
+    light_surface.blit(rot, rect.topleft, special_flags=pygame.BLEND_RGBA_MULT)
 
-    # Multiply light onto dark_surface
     dark_surface.blit(light_surface, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
-
-    # Draw final combined surface
     screen.blit(dark_surface, (0,0))
 
 # ---------------- GAME LOOP ----------------
@@ -189,16 +198,18 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if event.type == pygame.KEYDOWN:
-            # ESC to quit
             if event.key == pygame.K_ESCAPE:
                 running = False
-            # Mask switching
             if event.key == pygame.K_1:
                 current_mask = 0
             if event.key == pygame.K_2:
                 current_mask = 1
             if event.key == pygame.K_3:
                 current_mask = 2
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F3:
+                    debug_light = not debug_light
+
 
     keys = pygame.key.get_pressed()
 
@@ -213,36 +224,29 @@ while running:
 
     # -------- AIMING --------
     if keys[pygame.K_w]:
-        if keys[pygame.K_a]:
-            target_angle = -135
-        elif keys[pygame.K_d]:
-            target_angle = -45
-        else:
-            target_angle = -90
+        target_angle = -90
+        if keys[pygame.K_a]: target_angle = -135
+        if keys[pygame.K_d]: target_angle = -45
     elif keys[pygame.K_s]:
-        if keys[pygame.K_a]:
-            target_angle = 135
-        elif keys[pygame.K_d]:
-            target_angle = 45
-        else:
-            target_angle = 90
+        target_angle = 90
+        if keys[pygame.K_a]: target_angle = 135
+        if keys[pygame.K_d]: target_angle = 45
     else:
-        if keys[pygame.K_a]:
-            target_angle = 180
-        elif keys[pygame.K_d]:
-            target_angle = 0
+        if keys[pygame.K_a]: target_angle = 180
+        if keys[pygame.K_d]: target_angle = 0
 
     facing_angle += (target_angle - facing_angle) * 0.25
 
+
     # -------- JUMP --------
-    if keys[pygame.K_SPACE]:
+    if keys[pygame.K_SPACE] or keys[pygame.K_w]:
         if on_ground and not jump_held:
             vel_y = -JUMP
             jump_held = True
     else:
         jump_held = False
 
-    # -------- PHYSICS --------
+
     vel_y += GRAVITY
     vel_y = min(vel_y, 18)
 
