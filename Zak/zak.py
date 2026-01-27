@@ -27,7 +27,7 @@ CUBE_SIZE = 36
 player = pygame.Rect(150, 550, CUBE_SIZE, CUBE_SIZE)
 
 player_img = pygame.image.load(
-    "Q:/Veilshift/Veilshift/Charlotte/PlayerIdleNoMask.png"
+    "Q:\Veilshift(UPDATED)\Veilshift\Charlotte\PlayerIdleNoMask.png"
 ).convert_alpha()
 player_img = pygame.transform.scale(player_img, (CUBE_SIZE, CUBE_SIZE))
 
@@ -38,6 +38,8 @@ JUMP = 14
 GRAVITY = 0.7
 on_ground = False
 facing_right = True
+facing_angle = 0.0
+target_angle = 0.0
 
 # ---------------- MASK ----------------
 current_mask = 0
@@ -47,7 +49,7 @@ ENEMY_SPEED = 2
 ENEMY_CHASE_SPEED = 4
 ENEMY_GRAVITY = 0.7
 ENEMY_MAX_FALL = 18
-ENEMY_VISION_RADIUS = 150
+ENEMY_VISION_RADIUS = 235
 ENEMY_FOV = 160
 
 EYE_MAX_DISTANCE = 400
@@ -120,42 +122,57 @@ LIGHT_RADIUS = 280
 FOV_ANGLE = 90
 light_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
 
-def cast_ray(origin, angle, blocks, max_distance):
-    x, y = origin
+RAY_COUNT = 50
+RAY_STEP = 4
+
+def cast_ray(origin, angle):
+    ox, oy = origin
     rad = math.radians(angle)
-    dx, dy = math.cos(rad), math.sin(rad)
+    dx = math.cos(rad)
+    dy = math.sin(rad)
 
-    for i in range(max_distance):
-        px, py = x + dx * i, y + dy * i
-        for p in blocks:
+    for i in range(0, LIGHT_RADIUS, RAY_STEP):
+        px = ox + dx * i
+        py = oy + dy * i
+        for p in platforms:
             if p.active() and p.rect.collidepoint(px, py):
-                return px, py
-    return x + dx * max_distance, y + dy * max_distance
+                return (px, py)
 
-def get_vision_polygon(origin, facing_right, blocks):
+    return (ox + dx * LIGHT_RADIUS, oy + dy * LIGHT_RADIUS)
+
+def cast_ray_enemy(origin, angle):
+    ox, oy = origin
+    rad = math.radians(angle)
+    dx = math.cos(rad)
+    dy = math.sin(rad)
+
+    for i in range(0, ENEMY_VISION_RADIUS, RAY_STEP):
+        px = ox + dx * i
+        py = oy + dy * i
+
+        for p in platforms:
+            if p.active() and p.rect.collidepoint(px, py):
+                return (px, py)
+
+    return (ox + dx * ENEMY_VISION_RADIUS, oy + dy * ENEMY_VISION_RADIUS)
+
+def get_vision_polygon(origin):
     points = [origin]
-    start = -FOV_ANGLE / 2 if facing_right else 180 - FOV_ANGLE / 2
-    for i in range(int(FOV_ANGLE) + 1):
-        points.append(cast_ray(origin, start + i, blocks, LIGHT_RADIUS))
+    start = facing_angle - FOV_ANGLE / 2
+    step = FOV_ANGLE / RAY_COUNT
+    for i in range(RAY_COUNT + 1):
+        points.append(cast_ray(origin, start + i * step))
     return points
 
 def get_enemy_vision_polygon(enemy):
     origin = enemy.rect.center
     points = [origin]
 
-    start_angle = (
-        -ENEMY_FOV / 2 if enemy.facing_right
-        else 180 - ENEMY_FOV / 2
-    )
+    start_angle = -ENEMY_FOV / 2 if enemy.facing_right else 180 - ENEMY_FOV / 2
 
     for i in range(int(ENEMY_FOV) + 1):
         angle = start_angle + i
-        end_point = cast_ray(
-            origin,
-            angle,
-            platforms,
-            ENEMY_VISION_RADIUS
-        )
+        end_point = cast_ray_enemy(origin, angle)
         points.append(end_point)
 
     return points
@@ -171,11 +188,11 @@ def point_in_polygon(point, poly):
             inside = not inside
     return inside
 
-def draw_light(origin, facing_right):
+def draw_light(origin):
     if DEBUG:
         return
     light_surface.fill((0, 0, 0, 255))
-    poly = get_vision_polygon(origin, facing_right, platforms)
+    poly = get_vision_polygon(origin)
     pygame.draw.polygon(light_surface, (255, 255, 180, 200), poly)
     screen.blit(light_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
@@ -238,11 +255,12 @@ class Enemy:
 
 enemy = Enemy(600, 384)
 
-# ---------------- GAME LOOP ----------------
+# -------- GAME LOOP --------
 running = True
 while running:
     clock.tick(FPS)
 
+    # -------- EVENTS --------
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
             running = False
@@ -256,34 +274,56 @@ while running:
             if e.key == pygame.K_SPACE and on_ground:
                 vel_y = -JUMP
 
+    # -------- INPUT / MOVEMENT --------
     keys = pygame.key.get_pressed()
     vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
     if vel_x != 0:
         facing_right = vel_x > 0
 
+    # -------- AIMING / CONE ROTATION --------
+    if keys[pygame.K_w]:
+        target_angle = -90
+        if keys[pygame.K_a]: target_angle = -135
+        if keys[pygame.K_d]: target_angle = -45
+    elif keys[pygame.K_s]:
+        target_angle = 90
+        if keys[pygame.K_a]: target_angle = 135
+        if keys[pygame.K_d]: target_angle = 45
+    else:
+        if keys[pygame.K_a]: target_angle = 180
+        if keys[pygame.K_d]: target_angle = 0
+
+    facing_angle += (target_angle - facing_angle) * 0.25
+
+    # -------- PHYSICS --------
     vel_y = min(vel_y + GRAVITY, 18)
     player, vel_y = move_and_collide(player, vel_x, vel_y)
     enemy.update(player)
 
+    # -------- DRAW --------
     screen.fill(AMBIENT_DARK)
+
+    # Draw platforms
     for p in platforms:
         p.draw()
 
+    # Draw enemy vision outline in debug mode
     if DEBUG:
         enemy_vision = get_enemy_vision_polygon(enemy)
-        color = (
-            ENEMY_DEBUG_COLOR_ALERT
-            if enemy.alerted
-            else ENEMY_DEBUG_COLOR_IDLE
-        )
+        color = ENEMY_DEBUG_COLOR_ALERT if enemy.alerted else ENEMY_DEBUG_COLOR_IDLE
         pygame.draw.polygon(screen, color, enemy_vision, width=2)
 
-    vision_poly = get_vision_polygon(player.center, facing_right, platforms)
+
+    vision_poly = get_vision_polygon(player.center)
+    draw_light(player.center)
+
+    # Draw enemies
     enemy.draw_body(vision_poly)
-    draw_light(player.center, facing_right)
     enemy.draw_eyes()
 
+    # Draw player on top
     screen.blit(player_img, player.topleft)
+
     pygame.display.flip()
 
 pygame.quit()
