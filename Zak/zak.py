@@ -13,6 +13,14 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | pygame.FULLSCR
 
 DEBUG = False
 
+MASKLESS = -1
+MASKLESS_COLOR = (255, 255, 255)
+
+def get_mask_color():
+    if current_mask == MASKLESS:
+        return MASKLESS_COLOR
+    return MASK_INFO[current_mask]["color"]
+
 # ---------------- COLORS ----------------
 AMBIENT_DARK = (18, 18, 22)
 
@@ -26,10 +34,15 @@ MASK_INFO = {
 CUBE_SIZE = 36
 player = pygame.Rect(150, 550, CUBE_SIZE, CUBE_SIZE)
 
-player_img = pygame.image.load(
-    "Q:\Veilshift(UPDATED)\Veilshift\Charlotte\PlayerIdleNoMask.png"
+playerNM_img = pygame.image.load(
+    "Veilshift/Charlotte/PlayerSprites/PlayerIdleNoMask.png"
 ).convert_alpha()
-player_img = pygame.transform.scale(player_img, (CUBE_SIZE, CUBE_SIZE))
+playerNM_img = pygame.transform.scale(playerNM_img, (CUBE_SIZE, CUBE_SIZE))
+
+playerNM_run_img = pygame.image.load(
+    "Q:\Veilshift(UPDATED)\Veilshift\Charlotte\PlayerSprites\PlayerRunningNoMask.png"
+).convert_alpha()
+playerNM_run_img = pygame.transform.scale(playerNM_run_img, (CUBE_SIZE, CUBE_SIZE))
 
 vel_x = 0
 vel_y = 0
@@ -42,14 +55,21 @@ facing_angle = 0.0
 target_angle = 0.0
 jump_held = False
 
+current_player_img = playerNM_img  # start with idle
+
 # Pulsing mini spotlight
 pulse_timer = 0.0
 MIN_PULSE_RADIUS = 20
 MAX_PULSE_RADIUS = 20
 PULSE_SPEED = 0.0
 
+# Enemy image
+enemy1_img = pygame.image.load("Q:\Veilshift(UPDATED)\Veilshift\Charlotte\ShadowMonster.png"
+).convert_alpha()
+enemy1_img = pygame.transform.scale(enemy1_img, (CUBE_SIZE, CUBE_SIZE))
+
 # ---------------- MASK ----------------
-current_mask = 0
+current_mask = MASKLESS
 
 # ---------------- ENEMY CONSTANTS ----------------
 ENEMY_SPEED = 2
@@ -73,7 +93,8 @@ class Platform:
         self.masks = masks  # None = always visible
 
     def active(self):
-        # Always visible if masks is None
+        if current_mask == MASKLESS:
+            return self.masks is None  # only walls & floor
         if self.masks is None:
             return True
         return current_mask in self.masks
@@ -81,7 +102,7 @@ class Platform:
     def draw(self):
         if not self.active():
             return
-        base = MASK_INFO[current_mask]["color"]
+        base = get_mask_color()
         color = tuple(min(255, c + 20) for c in base)
         pygame.draw.rect(screen, color, self.rect, border_radius=4)
 
@@ -109,7 +130,7 @@ def move_and_collide(rect, dx, dy):
 
     rect.x += dx
     for p in platforms:
-        # ✅ Always check collision, even if platform is not active
+        # Always check collision, even if platform is not active
         if rect.colliderect(p.rect):
             if dx > 0:
                 rect.right = p.rect.left
@@ -278,11 +299,16 @@ class Enemy:
         self.rect, self.vel_y = move_and_collide(self.rect, self.vel_x, self.vel_y)
 
     def draw_body(self, vision_poly):
+        if current_mask == 3:
+            return
         if current_mask == 1 and point_in_polygon(self.rect.center, vision_poly):
-            screen.blit(player_img, self.rect.topleft)
+            img = enemy1_img
+            if not self.facing_right:
+                img = pygame.transform.flip(enemy1_img, True, False)
+            screen.blit(img, self.rect.topleft)
 
     def draw_eyes(self):
-        if current_mask == 1:
+        if current_mask in (1,3):
             return
         dx = player.centerx - self.rect.centerx
         dy = player.centery - self.rect.centery
@@ -326,15 +352,23 @@ while running:
         if e.type == pygame.KEYDOWN:
             if e.key == pygame.K_ESCAPE:
                 running = False
-            if e.key == pygame.K_1: current_mask = 0
-            if e.key == pygame.K_2: current_mask = 1
-            if e.key == pygame.K_3: current_mask = 2
+            if e.key == pygame.K_1: current_mask = MASKLESS
+            if e.key == pygame.K_2: current_mask = 0
+            if e.key == pygame.K_3: current_mask = 1
+            if e.key == pygame.K_4: current_mask = 2
             if e.key == pygame.K_F3: DEBUG = not DEBUG
 
     # -------- INPUT / MOVEMENT --------
     vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
     if vel_x != 0:
         facing_right = vel_x > 0
+
+    # -------- SPRITE SELECTION --------
+    if vel_x != 0:
+        current_player_img = playerNM_run_img  # running
+    else:
+        current_player_img = playerNM_img      # idle
+
 
     # -------- PHYSICS --------
     vel_y = min(vel_y + GRAVITY, 18)
@@ -373,8 +407,11 @@ while running:
     enemy.draw_body(vision_poly)
     enemy.draw_eyes()
 
-    # Draw player on top
-    screen.blit(player_img, player.topleft)
+    # Draw player on top with flipping
+    img_to_draw = current_player_img
+    if not facing_right:  # flip if moving left
+        img_to_draw = pygame.transform.flip(current_player_img, True, False)
+    screen.blit(img_to_draw, player.topleft)
 
     pygame.display.flip()
 
