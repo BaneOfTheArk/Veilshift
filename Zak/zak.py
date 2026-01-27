@@ -40,6 +40,13 @@ on_ground = False
 facing_right = True
 facing_angle = 0.0
 target_angle = 0.0
+jump_held = False
+
+# Pulsing mini spotlight
+pulse_timer = 0.0
+MIN_PULSE_RADIUS = 20
+MAX_PULSE_RADIUS = 20
+PULSE_SPEED = 0.0
 
 # ---------------- MASK ----------------
 current_mask = 0
@@ -61,11 +68,14 @@ ENEMY_DEBUG_COLOR_ALERT = (255, 80, 80, 80) # red
 
 # ---------------- PLATFORM ----------------
 class Platform:
-    def __init__(self, rect, masks):
+    def __init__(self, rect, masks=None):
         self.rect = pygame.Rect(rect)
-        self.masks = masks
+        self.masks = masks  # None = always visible
 
     def active(self):
+        # Always visible if masks is None
+        if self.masks is None:
+            return True
         return current_mask in self.masks
 
     def draw(self):
@@ -78,15 +88,17 @@ class Platform:
 # ---------------- LEVEL ----------------
 def load_level():
     return [
-        Platform((0, 680, 1280, 40), [0, 1, 2]),
-        Platform((200, 580, 200, 25), [0]),
+        Platform((0, 680, 1280, 40), None),     # Floor always visible
+        Platform((0, 0, 40, 720), None),        # Left wall always visible
+        Platform((1240, 0, 40, 720), None),     # Right wall always visible
+
+
+        Platform((200, 580, 200, 25), [0]),     # Mask-specific platforms
         Platform((460, 500, 180, 25), [0]),
         Platform((700, 420, 180, 25), [0]),
         Platform((960, 340, 160, 25), [0]),
         Platform((320, 360, 160, 25), [0]),
         Platform((120, 280, 160, 25), [0]),
-        Platform((0, 0, 40, 720), [0]),
-        Platform((1240, 0, 40, 720), [0]),
     ]
 
 platforms = load_level()
@@ -97,7 +109,8 @@ def move_and_collide(rect, dx, dy):
 
     rect.x += dx
     for p in platforms:
-        if p.active() and rect.colliderect(p.rect):
+        # ✅ Always check collision, even if platform is not active
+        if rect.colliderect(p.rect):
             if dx > 0:
                 rect.right = p.rect.left
             elif dx < 0:
@@ -106,7 +119,7 @@ def move_and_collide(rect, dx, dy):
     rect.y += dy
     on_ground = False
     for p in platforms:
-        if p.active() and rect.colliderect(p.rect):
+        if rect.colliderect(p.rect):
             if dy > 0:
                 rect.bottom = p.rect.top
                 on_ground = True
@@ -189,12 +202,41 @@ def point_in_polygon(point, poly):
     return inside
 
 def draw_light(origin):
+    global pulse_timer
     if DEBUG:
         return
+
     light_surface.fill((0, 0, 0, 255))
+
+    # --- Mini pulsing spotlight around player ---
+    pulse_timer += 1 / FPS
+    pulse_radius = MIN_PULSE_RADIUS + (MAX_PULSE_RADIUS - MIN_PULSE_RADIUS) * (
+        0.5 + 0.5 * math.sin(pulse_timer * PULSE_SPEED * math.pi)
+    )
+    mini_spot = pygame.Surface((pulse_radius*2, pulse_radius*2), pygame.SRCALPHA)
+    pygame.draw.circle(mini_spot, (255, 255, 200, 100), (pulse_radius, pulse_radius), int(pulse_radius))
+    light_surface.blit(mini_spot, (origin[0]-pulse_radius, origin[1]-pulse_radius), special_flags=pygame.BLEND_RGBA_ADD)
+
+    # --- Main cone light ---
     poly = get_vision_polygon(origin)
     pygame.draw.polygon(light_surface, (255, 255, 180, 200), poly)
-    screen.blit(light_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
+    # --- Cone gradient ---
+    gradient = pygame.Surface((LIGHT_RADIUS*2, LIGHT_RADIUS*2), pygame.SRCALPHA)
+    center = LIGHT_RADIUS
+    for r in range(LIGHT_RADIUS, 0, -1):
+        alpha = int(200 * (r / LIGHT_RADIUS))
+        pygame.draw.circle(gradient, (255, 255, 220, alpha), (center, center), r)
+    rot = pygame.transform.rotate(gradient, -facing_angle)
+    rect = rot.get_rect(center=origin)
+    light_surface.blit(rot, rect.topleft, special_flags=pygame.BLEND_RGBA_MULT)
+
+    # --- Draw light on screen ---
+    screen.fill(AMBIENT_DARK)  # Base ambient dark
+    for p in platforms:
+        if p.active():  # only draw visible platforms
+            p.draw()
+    screen.blit(light_surface, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
 
 # ---------------- ENEMY ----------------
 class Enemy:
@@ -260,27 +302,9 @@ running = True
 while running:
     clock.tick(FPS)
 
-    # -------- EVENTS --------
-    for e in pygame.event.get():
-        if e.type == pygame.QUIT:
-            running = False
-        if e.type == pygame.KEYDOWN:
-            if e.key == pygame.K_ESCAPE:
-                running = False
-            if e.key == pygame.K_1: current_mask = 0
-            if e.key == pygame.K_2: current_mask = 1
-            if e.key == pygame.K_3: current_mask = 2
-            if e.key == pygame.K_F3: DEBUG = not DEBUG
-            if e.key == pygame.K_SPACE and on_ground:
-                vel_y = -JUMP
-
-    # -------- INPUT / MOVEMENT --------
-    keys = pygame.key.get_pressed()
-    vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
-    if vel_x != 0:
-        facing_right = vel_x > 0
-
     # -------- AIMING / CONE ROTATION --------
+    keys = pygame.key.get_pressed()
+
     if keys[pygame.K_w]:
         target_angle = -90
         if keys[pygame.K_a]: target_angle = -135
@@ -295,9 +319,37 @@ while running:
 
     facing_angle += (target_angle - facing_angle) * 0.25
 
+    # -------- EVENTS --------
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            running = False
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_ESCAPE:
+                running = False
+            if e.key == pygame.K_1: current_mask = 0
+            if e.key == pygame.K_2: current_mask = 1
+            if e.key == pygame.K_3: current_mask = 2
+            if e.key == pygame.K_F3: DEBUG = not DEBUG
+
+    # -------- INPUT / MOVEMENT --------
+    vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
+    if vel_x != 0:
+        facing_right = vel_x > 0
+
     # -------- PHYSICS --------
     vel_y = min(vel_y + GRAVITY, 18)
     player, vel_y = move_and_collide(player, vel_x, vel_y)
+
+        # -------- JUMP --------
+    keys = pygame.key.get_pressed()
+
+    if keys[pygame.K_SPACE]:
+        if on_ground and not jump_held:
+            vel_y = -JUMP
+            jump_held = True
+    else:
+        jump_held = False
+
     enemy.update(player)
 
     # -------- DRAW --------
