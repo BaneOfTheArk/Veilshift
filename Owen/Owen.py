@@ -36,7 +36,7 @@ SPEED = 6
 ACCEL = 0.9
 FRICTION = 0.82
 
-JUMP = 10
+JUMP = 12
 GRAVITY = 0.7
 on_ground = False
 
