@@ -27,9 +27,13 @@ CUBE_SIZE = 36
 player = pygame.Rect(150, 550, CUBE_SIZE, CUBE_SIZE)
 
 player_img = pygame.image.load(
-    "Q:\Global game Jam\Veilshift\Charlotte\PlayerIdleNoMask.png"
+    "Q:\\Global game Jam\\Veilshift\\Charlotte\\PlayerSprites\\PlayerIdleNoMask.png"
 ).convert_alpha()
-player_img = pygame.transform.scale(player_img, (CUBE_SIZE, CUBE_SIZE))
+# Slightly bigger sprite
+player_img = pygame.transform.scale(
+    player_img,
+    (int(CUBE_SIZE * 1.1), int(CUBE_SIZE * 1.1))
+)
 
 vel_x = 0
 vel_y = 0
@@ -73,7 +77,6 @@ class Platform:
         self.masks = masks  # None = always visible
 
     def active(self):
-        # Always visible if masks is None
         if self.masks is None:
             return True
         return current_mask in self.masks
@@ -85,14 +88,54 @@ class Platform:
         color = tuple(min(255, c + 20) for c in base)
         pygame.draw.rect(screen, color, self.rect, border_radius=4)
 
+# ---------------- PUSHABLE BOX ----------------
+class PushableBox:
+    def __init__(self, x, y):
+        # Visual size (BIG box)
+        self.width = 140
+        self.height = 100
+
+        # Physics hitbox (tiny core)
+        self.hit_width = 20
+        self.hit_height = 20
+        self.hit_rect = pygame.Rect(0, 0, self.hit_width, self.hit_height)
+        self.hit_rect.midbottom = (x + self.width // 2, y + self.height)
+
+        # Visual rect (follows hitbox)
+        self.rect = pygame.Rect(x, y, self.width, self.height)
+        self.rect.midbottom = self.hit_rect.midbottom
+
+        self.vel_y = 0
+
+        # Load box image
+        self.image = pygame.image.load(
+            "Q:\\Global game Jam\\Veilshift\\Charlotte\\BackgroundAssets\\BigBoxLevel1 .png"
+        ).convert_alpha()
+        # Slightly bigger than visual rect if needed
+        self.image = pygame.transform.scale(self.image, (self.width, self.height))
+
+    def update(self):
+        # Gravity
+        self.vel_y += GRAVITY
+        self.vel_y = min(self.vel_y, 18)
+
+        # Vertical physics only for hitbox
+        self.hit_rect, self.vel_y = move_and_collide(self.hit_rect, 0, self.vel_y)
+
+        # Sync visual rect with hitbox
+        self.rect.midbottom = self.hit_rect.midbottom
+
+    def draw(self):
+        # Center image over hitbox
+        img_rect = self.image.get_rect(center=self.hit_rect.center)
+        screen.blit(self.image, img_rect.topleft)
+
 # ---------------- LEVEL ----------------
 def load_level():
     return [
         Platform((0, 680, 1280, 40), None),     # Floor always visible
         Platform((0, 0, 40, 720), None),        # Left wall always visible
         Platform((1240, 0, 40, 720), None),     # Right wall always visible
-
-
         Platform((200, 580, 200, 25), [0]),     # Mask-specific platforms
         Platform((460, 500, 180, 25), [0]),
         Platform((700, 420, 180, 25), [0]),
@@ -106,16 +149,13 @@ platforms = load_level()
 # ---------------- COLLISION ----------------
 def move_and_collide(rect, dx, dy):
     global on_ground
-
     rect.x += dx
     for p in platforms:
-        # ✅ Always check collision, even if platform is not active
         if rect.colliderect(p.rect):
             if dx > 0:
                 rect.right = p.rect.left
             elif dx < 0:
                 rect.left = p.rect.right
-
     rect.y += dy
     on_ground = False
     for p in platforms:
@@ -127,7 +167,6 @@ def move_and_collide(rect, dx, dy):
             elif dy < 0:
                 rect.top = p.rect.bottom
                 return rect, 0
-
     return rect, dy
 
 # ---------------- LIGHT ----------------
@@ -143,14 +182,12 @@ def cast_ray(origin, angle):
     rad = math.radians(angle)
     dx = math.cos(rad)
     dy = math.sin(rad)
-
     for i in range(0, LIGHT_RADIUS, RAY_STEP):
         px = ox + dx * i
         py = oy + dy * i
         for p in platforms:
             if p.active() and p.rect.collidepoint(px, py):
                 return (px, py)
-
     return (ox + dx * LIGHT_RADIUS, oy + dy * LIGHT_RADIUS)
 
 def cast_ray_enemy(origin, angle):
@@ -158,15 +195,12 @@ def cast_ray_enemy(origin, angle):
     rad = math.radians(angle)
     dx = math.cos(rad)
     dy = math.sin(rad)
-
     for i in range(0, ENEMY_VISION_RADIUS, RAY_STEP):
         px = ox + dx * i
         py = oy + dy * i
-
         for p in platforms:
             if p.active() and p.rect.collidepoint(px, py):
                 return (px, py)
-
     return (ox + dx * ENEMY_VISION_RADIUS, oy + dy * ENEMY_VISION_RADIUS)
 
 def get_vision_polygon(origin):
@@ -180,14 +214,10 @@ def get_vision_polygon(origin):
 def get_enemy_vision_polygon(enemy):
     origin = enemy.rect.center
     points = [origin]
-
     start_angle = -ENEMY_FOV / 2 if enemy.facing_right else 180 - ENEMY_FOV / 2
-
     for i in range(int(ENEMY_FOV) + 1):
         angle = start_angle + i
-        end_point = cast_ray_enemy(origin, angle)
-        points.append(end_point)
-
+        points.append(cast_ray_enemy(origin, angle))
     return points
 
 def point_in_polygon(point, poly):
@@ -206,6 +236,7 @@ def draw_light(origin):
     if DEBUG:
         return
 
+    # --- Prepare darkness surface ---
     light_surface.fill((0, 0, 0, 255))
 
     # --- Mini pulsing spotlight around player ---
@@ -231,12 +262,20 @@ def draw_light(origin):
     rect = rot.get_rect(center=origin)
     light_surface.blit(rot, rect.topleft, special_flags=pygame.BLEND_RGBA_MULT)
 
-    # --- Draw light on screen ---
-    screen.fill(AMBIENT_DARK)  # Base ambient dark
+    # --- Draw everything to screen ---
+    screen.fill(AMBIENT_DARK)  # Base ambient darkness
+
+    # Draw platforms
     for p in platforms:
-        if p.active():  # only draw visible platforms
+        if p.active():
             p.draw()
-    screen.blit(light_surface, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
+
+    # Draw box ALWAYS
+    box.draw()
+
+    # Apply light surface on top
+    screen.blit(light_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
+
 
 # ---------------- ENEMY ----------------
 class Enemy:
@@ -273,7 +312,6 @@ class Enemy:
         self.alerted = self.can_see_player(player.center)
         self.facing_right = player.centerx > self.rect.centerx if self.alerted else self.facing_right
         self.chase() if self.alerted else self.patrol()
-
         self.vel_y = min(self.vel_y + ENEMY_GRAVITY, ENEMY_MAX_FALL)
         self.rect, self.vel_y = move_and_collide(self.rect, self.vel_x, self.vel_y)
 
@@ -296,6 +334,7 @@ class Enemy:
         screen.blit(surf, (self.rect.x + (10 if self.facing_right else 4), self.rect.y + 10))
 
 enemy = Enemy(600, 384)
+box = PushableBox(400, 500)  # starting position
 
 # -------- GAME LOOP --------
 running = True
@@ -319,6 +358,45 @@ while running:
 
     facing_angle += (target_angle - facing_angle) * 0.25
 
+    # -------- INPUT / MOVEMENT --------
+    vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
+    if vel_x != 0:
+        facing_right = vel_x > 0
+
+    # -------- PHYSICS --------
+    vel_y = min(vel_y + GRAVITY, 18)
+    player, vel_y = move_and_collide(player, vel_x, vel_y)
+
+    # -------- JUMP --------
+    if keys[pygame.K_SPACE]:
+        if on_ground and not jump_held:
+            vel_y = -JUMP
+            jump_held = True
+    else:
+        jump_held = False
+
+    # -------- PUSHABLE BOX UPDATE --------
+    box.update()
+
+    # -------- PLAYER ↔ BOX INTERACTION --------
+    if player.colliderect(box.hit_rect):
+
+        # --- HORIZONTAL PUSH ---
+        if vel_x > 0:
+            box.hit_rect.x += vel_x
+            box.rect.midbottom = box.hit_rect.midbottom
+            player.right = box.hit_rect.left
+        elif vel_x < 0:
+            box.hit_rect.x += vel_x
+            box.rect.midbottom = box.hit_rect.midbottom
+            player.left = box.hit_rect.right
+
+        # --- STANDING ON BOX ---
+        if vel_y > 0 and player.bottom <= box.hit_rect.top + 10:
+            player.bottom = box.hit_rect.top
+            vel_y = 0
+            on_ground = True
+
     # -------- EVENTS --------
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
@@ -331,25 +409,7 @@ while running:
             if e.key == pygame.K_3: current_mask = 2
             if e.key == pygame.K_F3: DEBUG = not DEBUG
 
-    # -------- INPUT / MOVEMENT --------
-    vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
-    if vel_x != 0:
-        facing_right = vel_x > 0
-
-    # -------- PHYSICS --------
-    vel_y = min(vel_y + GRAVITY, 18)
-    player, vel_y = move_and_collide(player, vel_x, vel_y)
-
-        # -------- JUMP --------
-    keys = pygame.key.get_pressed()
-
-    if keys[pygame.K_SPACE]:
-        if on_ground and not jump_held:
-            vel_y = -JUMP
-            jump_held = True
-    else:
-        jump_held = False
-
+    # -------- ENEMY UPDATE --------
     enemy.update(player)
 
     # -------- DRAW --------
@@ -359,13 +419,18 @@ while running:
     for p in platforms:
         p.draw()
 
-    # Draw enemy vision outline in debug mode
+    # Draw pushable box (always visible)
+    box.draw()
+
+    # Debug visuals
     if DEBUG:
         enemy_vision = get_enemy_vision_polygon(enemy)
         color = ENEMY_DEBUG_COLOR_ALERT if enemy.alerted else ENEMY_DEBUG_COLOR_IDLE
         pygame.draw.polygon(screen, color, enemy_vision, width=2)
+        # Draw hitbox
+        pygame.draw.rect(screen, (255, 0, 0), box.hit_rect, 1)
 
-
+    # Draw light
     vision_poly = get_vision_polygon(player.center)
     draw_light(player.center)
 
@@ -374,7 +439,8 @@ while running:
     enemy.draw_eyes()
 
     # Draw player on top
-    screen.blit(player_img, player.topleft)
+    img_rect = player_img.get_rect(center=player.center)
+    screen.blit(player_img, img_rect.topleft)
 
     pygame.display.flip()
 
