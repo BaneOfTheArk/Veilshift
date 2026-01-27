@@ -237,7 +237,6 @@ while running:
 
     facing_angle += (target_angle - facing_angle) * 0.25
 
-
     # -------- JUMP --------
     if keys[pygame.K_SPACE]:
         if on_ground and not jump_held:
@@ -245,7 +244,6 @@ while running:
             jump_held = True
     else:
         jump_held = False
-
 
     vel_y += GRAVITY
     vel_y = min(vel_y, 18)
