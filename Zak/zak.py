@@ -30,6 +30,28 @@ MASK_INFO = {
     2: {"color": (90, 200, 130)},   # Puzzle
 }
 
+# --------------- PUZZLE VARIABLES/CONSTANTS ----------------
+PUZZLE_TRIGGER_RECT = pygame.Rect(980, 640, 40, 40)
+
+PUZZLE_COLORS = [
+    (200, 60, 60),   # Red
+    (60, 200, 120),  # Green
+    (80, 120, 220),  # Blue
+]
+
+PUZZLE_SOLUTION = [0, 2, 1, 0]  # R, B, G, R
+
+puzzle_open = False
+puzzle_values = [0, 0, 0, 0]  # indices into PUZZLE_COLORS
+
+PUZZLE_SQUARE_SIZE = 100  # Bigger squares
+PUZZLE_SPACING = 30       # Space between squares
+
+PUZZLE_BASE_X = (WIDTH - (4 * PUZZLE_SQUARE_SIZE + 3 * PUZZLE_SPACING)) // 2
+PUZZLE_BASE_Y = (HEIGHT - PUZZLE_SQUARE_SIZE) // 2
+
+PUZZLE_OPEN_DISTANCE = 150
+
 # ---------------- PLAYER ----------------
 CUBE_SIZE = 36
 player = pygame.Rect(150, 550, CUBE_SIZE, CUBE_SIZE)
@@ -411,10 +433,40 @@ while running:
             if e.key == pygame.K_4: current_mask = 2
             if e.key == pygame.K_F3: DEBUG = not DEBUG
 
+            # TAP E to open puzzle only if close and has puzzle mask
+            if e.key == pygame.K_e:
+                dx = player.centerx - PUZZLE_TRIGGER_RECT.centerx
+                dy = player.centery - PUZZLE_TRIGGER_RECT.centery
+                distance = math.hypot(dx, dy)
+                if distance <= PUZZLE_OPEN_DISTANCE and current_mask == 2:
+                    puzzle_open = True
+
+        # Handle puzzle clicks
+        if e.type == pygame.MOUSEBUTTONDOWN and puzzle_open and current_mask == 2:
+            mx, my = pygame.mouse.get_pos()
+            for i in range(4):
+                rect = pygame.Rect(
+                    PUZZLE_BASE_X + i * (PUZZLE_SQUARE_SIZE + PUZZLE_SPACING),
+                    PUZZLE_BASE_Y,
+                    PUZZLE_SQUARE_SIZE,
+                    PUZZLE_SQUARE_SIZE
+                )
+                if rect.collidepoint(mx, my):
+                    puzzle_values[i] = (puzzle_values[i] + 1) % len(PUZZLE_COLORS)
+
     # -------- INPUT / MOVEMENT --------
     vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
     if vel_x != 0:
         facing_right = vel_x > 0
+
+
+    # Auto-close puzzle if player moves too far
+    dx = player.centerx - PUZZLE_TRIGGER_RECT.centerx
+    dy = player.centery - PUZZLE_TRIGGER_RECT.centery
+    distance = math.hypot(dx, dy)
+
+    if distance > PUZZLE_OPEN_DISTANCE:
+        puzzle_open = False
 
     # -------- SPRITE SELECTION --------
     state = "run" if vel_x != 0 else "idle"
@@ -459,6 +511,27 @@ while running:
     # Draw enemies
     enemy.draw_body(vision_poly)
     enemy.draw_eyes()
+
+    # Draw puzzle trigger (white box) only if close and has puzzle mask
+    dx = player.centerx - PUZZLE_TRIGGER_RECT.centerx
+    dy = player.centery - PUZZLE_TRIGGER_RECT.centery
+    distance = math.hypot(dx, dy)
+
+    if distance <= PUZZLE_OPEN_DISTANCE and current_mask == 2:
+        pygame.draw.rect(screen, (20, 20, 20), PUZZLE_TRIGGER_RECT)
+        pygame.draw.rect(screen, (255, 255, 255), PUZZLE_TRIGGER_RECT, 2)
+
+    # Draw puzzle UI if open AND player has puzzle mask
+    if puzzle_open and current_mask == 2:
+        for i in range(4):
+            rect = pygame.Rect(
+                PUZZLE_BASE_X + i * (PUZZLE_SQUARE_SIZE + PUZZLE_SPACING),
+                PUZZLE_BASE_Y,
+                PUZZLE_SQUARE_SIZE,
+                PUZZLE_SQUARE_SIZE
+            )
+            pygame.draw.rect(screen, PUZZLE_COLORS[puzzle_values[i]], rect)
+            pygame.draw.rect(screen, (20, 20, 20), rect, 5)
 
     # Draw player on top with flipping
     img_to_draw = current_player_img
