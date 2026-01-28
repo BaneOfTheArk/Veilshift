@@ -34,15 +34,69 @@ MASK_INFO = {
 CUBE_SIZE = 36
 player = pygame.Rect(150, 550, CUBE_SIZE, CUBE_SIZE)
 
-playerNM_img = pygame.image.load(
-    "Veilshift/Charlotte/PlayerSprites/PlayerIdleNoMask.png"
-).convert_alpha()
-playerNM_img = pygame.transform.scale(playerNM_img, (CUBE_SIZE, CUBE_SIZE))
+# ---------------- PLAYER SPRITES ----------------
 
-playerNM_run_img = pygame.image.load(
-    "Q:\Veilshift(UPDATED)\Veilshift\Charlotte\PlayerSprites\PlayerRunningNoMask.png"
-).convert_alpha()
-playerNM_run_img = pygame.transform.scale(playerNM_run_img, (CUBE_SIZE, CUBE_SIZE))
+PLAYER_SPRITES = {
+    MASKLESS: {
+        "idle": pygame.transform.scale(
+            pygame.image.load(
+                "Veilshift/Charlotte/PlayerSprites/PlayerIdleNoMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+        "run": pygame.transform.scale(
+            pygame.image.load(
+                "Q:/Veilshift/Veilshift/Charlotte/PlayerSprites/PlayerRunningNoMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+    },
+
+    0: {  # Spectral mask
+        "idle": pygame.transform.scale(
+            pygame.image.load(
+                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerIdlePlatformMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+        "run": pygame.transform.scale(
+            pygame.image.load(
+                "Veilshift/Charlotte/PlayerSprites/PlayerRunningPlatformMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+    },
+
+    1: {  # Physical mask
+        "idle": pygame.transform.scale(
+            pygame.image.load(
+                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerIdleAttackMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+        "run": pygame.transform.scale(
+            pygame.image.load(
+                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerRunningAttackMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+    },
+
+    2: {  # Puzzle mask
+        "idle": pygame.transform.scale(
+            pygame.image.load(
+                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerIdlePuzzleMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+        "run": pygame.transform.scale(
+            pygame.image.load(
+                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerRunningPuzzleMask.png"
+            ).convert_alpha(),
+            (CUBE_SIZE, CUBE_SIZE)
+        ),
+    },
+}
 
 vel_x = 0
 vel_y = 0
@@ -55,8 +109,6 @@ facing_angle = 0.0
 target_angle = 0.0
 jump_held = False
 
-current_player_img = playerNM_img  # start with idle
-
 # Pulsing mini spotlight
 pulse_timer = 0.0
 MIN_PULSE_RADIUS = 20
@@ -64,7 +116,7 @@ MAX_PULSE_RADIUS = 20
 PULSE_SPEED = 0.0
 
 # Enemy image
-enemy1_img = pygame.image.load("Q:\Veilshift(UPDATED)\Veilshift\Charlotte\ShadowMonster.png"
+enemy1_img = pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\ShadowMonster.png"
 ).convert_alpha()
 enemy1_img = pygame.transform.scale(enemy1_img, (CUBE_SIZE, CUBE_SIZE))
 
@@ -158,6 +210,7 @@ light_surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
 
 RAY_COUNT = 50
 RAY_STEP = 4
+
 
 def cast_ray(origin, angle):
     ox, oy = origin
@@ -364,11 +417,11 @@ while running:
         facing_right = vel_x > 0
 
     # -------- SPRITE SELECTION --------
-    if vel_x != 0:
-        current_player_img = playerNM_run_img  # running
-    else:
-        current_player_img = playerNM_img      # idle
+    state = "run" if vel_x != 0 else "idle"
 
+    # Fallback safety (prevents crashes)
+    sprites = PLAYER_SPRITES.get(current_mask, PLAYER_SPRITES[MASKLESS])
+    current_player_img = sprites[state]
 
     # -------- PHYSICS --------
     vel_y = min(vel_y + GRAVITY, 18)
