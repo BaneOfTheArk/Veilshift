@@ -43,8 +43,6 @@ MASK_INFO = {
 }
 
 # --------------- PUZZLE VARIABLES/CONSTANTS ----------------
-PUZZLE_TRIGGER_RECT = pygame.Rect(980, 640, 40, 40)
-
 PUZZLE_COLORS = [
     (200, 60, 60),   # Red
     (60, 200, 120),  # Green
@@ -67,6 +65,11 @@ PUZZLE_OPEN_DISTANCE = 150
 # ---------------- PLAYER ----------------
 CUBE_SIZE = 36
 player = pygame.Rect(150, 550, CUBE_SIZE, CUBE_SIZE)
+MAX_HEALTH = 3
+player_health = MAX_HEALTH
+INVULN_TIME = 60  # frames
+damage_timer = 0
+
 
 # ---------------- PLAYER SPRITES ----------------
 
@@ -191,9 +194,9 @@ HINT_IMAGES = {
 }
 
 HINT_POSITIONS = {
-    "Red": [(200, 550)],
-    "Green": [(800, 550)],
-    "Blue": [(400, 550), (600, 550)],
+    "Red": [(200, 400)],
+    "Green": [(800, 425)],
+    "Blue": [(400, 415), (600, 455)],
 }
 
 # Enemy image
@@ -212,12 +215,22 @@ ENEMY_MAX_FALL = 18
 ENEMY_VISION_RADIUS = 235
 ENEMY_FOV = 160
 
+ENEMY_MAX_HEALTH = 2
+ATTACK_DAMAGE = 1
+ATTACK_RANGE = 80
+ATTACK_COOLDOWN = 20  # frames
+
 EYE_MAX_DISTANCE = 400
 EYE_MIN_ALPHA = 40
 EYE_MAX_ALPHA = 255
 
 ENEMY_DEBUG_COLOR_IDLE = (255, 255, 0, 60)   # yellow
 ENEMY_DEBUG_COLOR_ALERT = (255, 80, 80, 80) # red
+
+# ---------------- PLAYER ATTACK ----------------
+PLAYER_ATTACK_RANGE = 80
+PLAYER_ATTACK_COOLDOWN = 20  # frames
+player_attack_timer = 0
 
 # ---------------- PLATFORM ----------------
 class Platform:
@@ -240,20 +253,35 @@ class Platform:
         color = tuple(min(255, c + 20) for c in base)
         pygame.draw.rect(screen, color, self.rect, border_radius=4)
 
+# ---------------- PUZZLE TRIGGER ----------------
+class PuzzleTrigger:
+    def __init__(self, x, y, size=40):
+        self.rect = pygame.Rect(x, y, size, size)
+
+    def move(self, dx, dy):
+        self.rect.x += dx
+        self.rect.y += dy
+
+    def draw(self):
+        pygame.draw.rect(screen, (40, 40, 40), self.rect)
+        pygame.draw.rect(screen, (90, 200, 130), self.rect, 2)
+
+puzzle_trigger = PuzzleTrigger(180, 240)
+
 # ---------------- LEVEL ----------------
 def load_level():
     return [
-        Platform((0, 680, 1280, 40), None, visible=True),     # Floor always visible
+        Platform((0, 680, 1280, -80), None, visible=True),     # Floor always visible
         Platform((0, 0, 40, 720), None, visible=True),        # Left wall always visible
         Platform((1240, 0, 40, 720), None, visible=True),     # Right wall always visible
+        Platform((0, 120, 1280, 80), None, visible=True),
 
-
-        Platform((200, 580, 200, 25), [0]),     # Mask-specific platforms
+        # Mask-specific platforms
         Platform((460, 500, 180, 25), [0]),
         Platform((700, 420, 180, 25), [0]),
         Platform((960, 340, 160, 25), [0]),
         Platform((320, 360, 160, 25), [0]),
-        Platform((120, 280, 160, 25), [0]),
+        Platform((120, 280, 160, 25), [0,2]),
     ]
 
 platforms = load_level()
@@ -284,6 +312,22 @@ def move_and_collide(rect, dx, dy):
                 return rect, 0
 
     return rect, dy
+
+def get_player_attack_rect():
+    if facing_right:
+        return pygame.Rect(
+            player.right,
+            player.centery - 20,
+            PLAYER_ATTACK_RANGE,
+            40
+        )
+    else:
+        return pygame.Rect(
+            player.left - PLAYER_ATTACK_RANGE,
+            player.centery - 20,
+            PLAYER_ATTACK_RANGE,
+            40
+        )
 
 # ---------------- LIGHT ----------------
 LIGHT_RADIUS = 280
@@ -412,6 +456,8 @@ class Enemy:
         self.vel_y = 0
         self.facing_right = True
         self.alerted = False
+        self.health = ENEMY_MAX_HEALTH
+        self.dead = False
 
     def can_see_player(self, pos):
         dx, dy = pos[0] - self.rect.centerx, pos[1] - self.rect.centery
@@ -433,7 +479,18 @@ class Enemy:
     def chase(self):
         self.vel_x = ENEMY_CHASE_SPEED if self.facing_right else -ENEMY_CHASE_SPEED
 
+    def take_damage(self, dmg):
+        if self.dead:
+            return
+        self.health -= dmg
+        if self.health <= 0:
+            self.dead = True
+
     def update(self, player):
+        if self.dead:
+            return
+        global player_health, damage_timer
+
         self.alerted = self.can_see_player(player.center)
         self.facing_right = player.centerx > self.rect.centerx if self.alerted else self.facing_right
         self.chase() if self.alerted else self.patrol()
@@ -441,7 +498,14 @@ class Enemy:
         self.vel_y = min(self.vel_y + ENEMY_GRAVITY, ENEMY_MAX_FALL)
         self.rect, self.vel_y = move_and_collide(self.rect, self.vel_x, self.vel_y)
 
+        # -------- ATTACK PLAYER --------
+        if self.rect.colliderect(player) and damage_timer <= 0:
+            player_health -= 1
+            damage_timer = INVULN_TIME
+
     def draw_body(self, vision_poly):
+        if self.dead:
+            return
         if current_mask == 3:
             return
         if current_mask == 1 and point_in_polygon(self.rect.center, vision_poly):
@@ -451,6 +515,8 @@ class Enemy:
             screen.blit(img, self.rect.topleft)
 
     def draw_eyes(self):
+        if self.dead:
+            return
         if current_mask in (1,3):
             return
         dx = player.centerx - self.rect.centerx
@@ -500,11 +566,20 @@ while running:
             if e.key == pygame.K_3: current_mask = 1
             if e.key == pygame.K_4: current_mask = 2
             if e.key == pygame.K_F3: DEBUG = not DEBUG
+            # -------- PLAYER ATTACK --------
+            if e.key == pygame.K_q and player_attack_timer <= 0:
+                if current_mask ==1:
+                    attack_rect = get_player_attack_rect()
+
+                    if attack_rect.colliderect(enemy.rect) and not enemy.dead:
+                        enemy.take_damage(enemy.health)  # one-hit kill
+
+                    player_attack_timer = PLAYER_ATTACK_COOLDOWN
 
             # TAP E to open puzzle only if close and has puzzle mask
             if e.key == pygame.K_e:
-                dx = player.centerx - PUZZLE_TRIGGER_RECT.centerx
-                dy = player.centery - PUZZLE_TRIGGER_RECT.centery
+                dx = player.centerx - puzzle_trigger.rect.centerx
+                dy = player.centery - puzzle_trigger.rect.centery
                 distance = math.hypot(dx, dy)
                 if distance <= PUZZLE_OPEN_DISTANCE and current_mask == 2:
                     puzzle_open = True
@@ -537,8 +612,8 @@ while running:
 
 
     # Auto-close puzzle if player moves too far
-    dx = player.centerx - PUZZLE_TRIGGER_RECT.centerx
-    dy = player.centery - PUZZLE_TRIGGER_RECT.centery
+    dx = player.centerx - puzzle_trigger.rect.centerx
+    dy = player.centery - puzzle_trigger.rect.centery
     distance = math.hypot(dx, dy)
 
     if distance > PUZZLE_OPEN_DISTANCE:
@@ -565,6 +640,19 @@ while running:
     else:
         jump_held = False
 
+    # -------- DAMAGE COOLDOWN --------
+    if damage_timer > 0:
+        damage_timer -= 1
+
+    # Player attack cd
+    if player_attack_timer > 0:
+        player_attack_timer -= 1
+
+    # -------- PLAYER DEATH --------
+    if player_health <= 0:
+        print("Player died")
+        running = False
+
     enemy.update(player)
 
     # -------- DRAW --------
@@ -583,6 +671,9 @@ while running:
         enemy_vision = get_enemy_vision_polygon(enemy)
         color = ENEMY_DEBUG_COLOR_ALERT if enemy.alerted else ENEMY_DEBUG_COLOR_IDLE
         pygame.draw.polygon(screen, color, enemy_vision, width=2)
+
+        if DEBUG and player_attack_timer > PLAYER_ATTACK_COOLDOWN - 2:
+            pygame.draw.rect(screen, (255, 255, 0), get_player_attack_rect(), 2)
 
     vision_poly = get_vision_polygon(player.center)
     draw_light(player.center)
@@ -603,13 +694,13 @@ while running:
     enemy.draw_eyes()
 
     # Draw puzzle trigger (white box) only if close and has puzzle mask
-    dx = player.centerx - PUZZLE_TRIGGER_RECT.centerx
-    dy = player.centery - PUZZLE_TRIGGER_RECT.centery
+    dx = player.centerx - puzzle_trigger.rect.centerx
+    dy = player.centery - puzzle_trigger.rect.centery
     distance = math.hypot(dx, dy)
 
     if distance <= PUZZLE_OPEN_DISTANCE and current_mask == 2:
-        pygame.draw.rect(screen, (40, 40, 40), PUZZLE_TRIGGER_RECT)
-        pygame.draw.rect(screen, (90, 200, 130), PUZZLE_TRIGGER_RECT, 2)
+        pygame.draw.rect(screen, (40, 40, 40), puzzle_trigger.rect)
+        pygame.draw.rect(screen, (90, 200, 130), puzzle_trigger.rect, 2)
 
     # Draw puzzle UI if open AND player has puzzle mask
     if puzzle_open and current_mask == 2:
@@ -628,6 +719,22 @@ while running:
     if not facing_right:  # flip if moving left
         img_to_draw = pygame.transform.flip(current_player_img, True, False)
     screen.blit(img_to_draw, player.topleft)
+
+    # -------- HEALTH BAR --------
+    BAR_X = 20
+    BAR_Y = 20
+    BAR_WIDTH = 150
+    BAR_HEIGHT = 20
+
+    # Background
+    pygame.draw.rect(screen, (40, 40, 40), (BAR_X, BAR_Y, BAR_WIDTH, BAR_HEIGHT))
+
+    # Health
+    health_width = int((player_health / MAX_HEALTH) * BAR_WIDTH)
+    pygame.draw.rect(screen, (200, 50, 50), (BAR_X, BAR_Y, health_width, BAR_HEIGHT))
+
+    # Border
+    pygame.draw.rect(screen, (255, 255, 255), (BAR_X, BAR_Y, BAR_WIDTH, BAR_HEIGHT), 2)
 
     pygame.display.flip()
 
