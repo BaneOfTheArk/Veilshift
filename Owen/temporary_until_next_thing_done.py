@@ -29,6 +29,7 @@ def get_mask_color():
         return MASKLESS_COLOR
     return MASK_INFO[current_mask]["color"]
 
+
 # ---------------- COLORS ----------------
 AMBIENT_DARK = (18, 18, 22)
 
