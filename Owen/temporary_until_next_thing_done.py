@@ -541,39 +541,6 @@ def player_on_real_ground(player_rect, platforms):
 
 
 
-# --- PRESSURE PLATE CLASS ---
-class PressurePlate:
-    def __init__(self, x, y, width, height, image_path, door_rect, door_image_path):
-        self.hit_rect = pygame.Rect(x, y, width, height)
-        self.image = pygame.image.load(image_path).convert_alpha()
-        self.image = pygame.transform.scale(self.image, (width, height))
-        self.door_rect = door_rect
-        self.door_image = pygame.image.load(door_image_path).convert_alpha()
-        self.door_image = pygame.transform.scale(self.door_image, (door_rect.width, door_rect.height))
-        self.active = False
-
-    def update(self, boxes):
-        self.active = False
-        for box in boxes:
-            # Only BoxWithWheels triggers the plate
-            if box.image and "BoxWithWheels.png" in str(box.image):
-                if box.hit_rect.colliderect(self.hit_rect):
-                    self.active = True
-                    break
-
-    def draw(self, surface, mask=2):
-        # Draw plate only in puzzle mask
-        if mask == 2:
-            surface.blit(self.image, self.hit_rect.topleft)
-        # Draw door if active
-        if self.active:
-            surface.blit(self.door_image, self.door_rect.topleft)
-        # Draw hitbox only in DEBUG mode
-        if DEBUG:
-            pygame.draw.rect(surface, (255, 0, 0), self.hit_rect, 2)
-
-
-
 
 
 
@@ -655,48 +622,33 @@ trolley_spawned = False
 player_on_box = None
 player_on_trolley = None
 
-# --- PRESSURE PLATE CLASS ---
-class PressurePlate:
-    def __init__(self, x, y, width, height, image_path, door_rect, door_image_path):
-        self.hit_rect = pygame.Rect(x, y, width, height)
-        self.image = pygame.image.load(image_path).convert_alpha()
-        self.image = pygame.transform.scale(self.image, (width, height))
-        self.door_rect = door_rect
-        self.door_image = pygame.image.load(door_image_path).convert_alpha()
-        self.door_image = pygame.transform.scale(self.door_image, (door_rect.width, door_rect.height))
-        self.active = False
+# --- Cone check helper ---
+import math
 
-    def update(self, boxes):
-        self.active = False
-        for box in boxes:
-            # Only BoxWithWheels triggers the plate
-            if box.image and "BoxWithWheels.png" in str(box.image):
-                if box.hit_rect.colliderect(self.hit_rect):
-                    self.active = True
-                    break
+def point_in_cone(point, cone_origin, cone_angle, cone_length=250, cone_width=60):
+    dx = point[0] - cone_origin[0]
+    dy = point[1] - cone_origin[1]
+    distance = math.hypot(dx, dy)
+    if distance > cone_length:
+        return False
 
-    def draw(self, surface, mask=2):
-        # Draw plate only in puzzle mask
-        if mask == 2:
-            surface.blit(self.image, self.hit_rect.topleft)
-        # Draw door if active
-        if self.active:
-            surface.blit(self.door_image, self.door_rect.topleft)
-        # Optional: draw hitbox for debugging or visibility
-        pygame.draw.rect(surface, (255, 0, 0), self.hit_rect, 2)
+    angle_to_point = math.degrees(math.atan2(dy, dx))
 
+    # Normalize angles between -180 and 180
+    def normalize_angle(a):
+        while a <= -180: a += 360
+        while a > 180: a -= 360
+        return a
 
-# --- CREATE PRESSURE PLATE INSTANCE ---
-door_rect = pygame.Rect(1000, 560, 64, 120)
-pressure_plate = PressurePlate(
-    500, 640, 80, 20,
-    "Q:/Global game Jam/Veilshift/Charlotte/PreasurePlate.png",
-    door_rect,
-    "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/Door.png"
-)
+    diff = normalize_angle(angle_to_point - cone_angle)
+    return abs(diff) <= cone_width / 2
 
-# ---------------- GAME LOOP ----------------
+def is_in_light(obj_rect, player_center, player_angle):
+    return point_in_cone(obj_rect.center, player_center, player_angle)
+
+# -------- GAME LOOP START --------
 while running:
+    
     clock.tick(FPS)
     keys = pygame.key.get_pressed()
 
@@ -741,13 +693,15 @@ while running:
     # --- PLAYER COLLISION WITH BOXES AND TROLLEYS (ONLY PUZZLE MASK) ---
     player_on_box = None
     player_on_trolley = None
-    if current_mask == 2:
+
+    if current_mask == 2:  # Only collide in puzzle mask
         for box in boxes:
             # Horizontal push
             if player.colliderect(box.hit_rect) and vel_x != 0:
                 if vel_x > 0: player.right = box.hit_rect.left
                 elif vel_x < 0: player.left = box.hit_rect.right
                 box.vel_x += vel_x * 0.35
+
             # Vertical collision (standing on box)
             if vel_y >= 0 and player.bottom <= box.hit_rect.bottom:
                 if player.colliderect(box.hit_rect):
@@ -762,6 +716,7 @@ while running:
                 if vel_x > 0: player.right = trolley.hit_rect.left
                 elif vel_x < 0: player.left = trolley.hit_rect.right
                 trolley.vel_x += vel_x * 0.35
+
             # Vertical collision (standing on trolley)
             if vel_y >= 0 and player.bottom <= trolley.hit_rect.bottom:
                 if player.colliderect(trolley.hit_rect):
@@ -798,6 +753,7 @@ while running:
     # --- UPDATE LAST SAFE POSITION ---
     inside_screen = 0 <= player.left <= WIDTH - player.width and 0 <= player.top <= HEIGHT - player.height
     on_platform_top = any(player.bottom == p.rect.top and player.right > p.rect.left and player.left < p.rect.right for p in platforms)
+
     if inside_screen and on_platform_top:
         last_safe_pos = player.topleft
 
@@ -819,25 +775,24 @@ while running:
     # --- ENEMY UPDATE ---
     enemy.update(player)
 
-    # --- BOX & TROLLEY SPAWN ---
+    # --- BOX SPAWN ---
     if not box_spawned:
         box_image_path = "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BigBoxLevel1 .png"
         boxes.append(Box(600, -100, 128, 128, box_image_path))
         box_spawned = True
+
+    # --- TROLLEY SPAWN ---
     if not trolley_spawned:
         trolley_image_path = "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BoxTrolly.png"
         trolleys.append(Trolley(800, -100, 128, 128, trolley_image_path))
         trolley_spawned = True
 
-    # --- UPDATE BOXES / TROLLEYS (ONLY PUZZLE MASK) ---
+    # --- UPDATE BOXES / TROLLEYS (ONLY IN PUZZLE MASK) ---
     if current_mask == 2:
         for box in boxes: box.update(platforms)
         for trolley in trolleys: trolley.update(platforms)
 
-    # --- PRESSURE PLATE UPDATE ---
-    pressure_plate.update(boxes)
-
-    # --- DRAWING ---
+    # --- DRAW ---
     screen.fill(AMBIENT_DARK)
     for p in platforms: p.draw()
 
@@ -851,6 +806,7 @@ while running:
     enemy.draw_body(vision_poly)
     enemy.draw_eyes()
 
+    # --- DRAW BOXES/TROLLEYS ONLY IF IN LIGHT ---
     if current_mask == 2:
         for box in boxes:
             if DEBUG or is_in_light(box.rect, player.center, facing_angle):
@@ -858,23 +814,16 @@ while running:
         for trolley in trolleys:
             if DEBUG or is_in_light(trolley.rect, player.center, facing_angle):
                 trolley.draw(screen)
-        # Draw pressure plate & door
-        pressure_plate.draw(screen, current_mask)
 
-    # --- DRAW PLAYER ---
     img_to_draw = current_player_img
     if not facing_right: img_to_draw = pygame.transform.flip(current_player_img, True, False)
     screen.blit(img_to_draw, player.topleft)
 
-    # --- DEBUG PLAYER HITBOX ---
     if DEBUG:
         hitbox_rect = pygame.Rect(player.x + 5, player.y, player.width - 10, player.height)
         pygame.draw.rect(screen, (0, 255, 0), hitbox_rect, 2)
 
     pygame.display.flip()
-
-
-
 
 
 
