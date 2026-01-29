@@ -19,6 +19,10 @@ MASKLESS_COLOR = (255, 255, 255)
 box_spawned = False
 boxes = []
 
+trolleys = []
+trolley_spawned = False
+
+
 
 def get_mask_color():
     if current_mask == MASKLESS:
@@ -112,6 +116,9 @@ facing_right = True
 facing_angle = 0.0
 target_angle = 0.0
 jump_held = False
+last_safe_pos = player.topleft
+was_on_box_or_trolley = False
+
 
 # Pulsing mini spotlight
 pulse_timer = 0.0
@@ -171,6 +178,8 @@ class Box:
         self.vel_x = 0
         self.vel_y = 0
         self.on_ground = False
+        self.saved_pos = self.rect.topleft
+        self.active_in_game = True  
 
         if image_path:
             self.image = pygame.image.load(image_path).convert_alpha()
@@ -190,54 +199,15 @@ class Box:
         )
 
     def apply_gravity(self, gravity=0.7, max_fall=18):
+        if not self.active_in_game:
+            return
         self.vel_y = min(self.vel_y + gravity, max_fall)
 
     def move_and_collide(self, platforms):
-        # --- HORIZONTAL MOVEMENT ---
-        self.hit_rect.x += self.vel_x
-        for p in platforms:
-            if self.hit_rect.colliderect(p.rect):
-                if self.vel_x > 0:  # moving right
-                    self.hit_rect.right = p.rect.left
-                    self.vel_x = 0
-                elif self.vel_x < 0:  # moving left
-                    self.hit_rect.left = p.rect.right
-                    self.vel_x = 0
+        if not self.active_in_game:
+            return
 
-            # Extra: prevent box sticking to walls when pushed
-        if self.vel_x != 0:
-            self.hit_rect.x += self.vel_x
-            for p in platforms:
-                if self.hit_rect.colliderect(p.rect):
-                    if self.vel_x > 0:
-                        self.hit_rect.right = p.rect.left
-                        self.vel_x = 0
-                    elif self.vel_x < 0:
-                        self.hit_rect.left = p.rect.right
-                        self.vel_x = 0
-
-
-        # --- VERTICAL MOVEMENT ---
-        self.hit_rect.y += self.vel_y
-        self.on_ground = False
-        for p in platforms:
-            if self.hit_rect.colliderect(p.rect):
-                if self.vel_y > 0:  # falling
-                    self.hit_rect.bottom = p.rect.top
-                    self.vel_y = 0
-                    self.on_ground = True
-                elif self.vel_y < 0:  # moving up
-                    self.hit_rect.top = p.rect.bottom
-                    self.vel_y = 0
-
-        # Sync image rect to hitbox plus offset
-        self.rect.topleft = (
-            self.hit_rect.x - self.hit_offset_x,
-            self.hit_rect.y - self.hit_offset_y
-        )
-
-    def update(self, platforms):
-        # Box moves horizontally
+        # Horizontal collisions
         self.hit_rect.x += self.vel_x
         for p in platforms:
             if self.hit_rect.colliderect(p.rect):
@@ -248,27 +218,84 @@ class Box:
                     self.hit_rect.left = p.rect.right
                     self.vel_x = 0
 
-        # Apply gravity and vertical collisions
+        # Vertical collisions
+        self.hit_rect.y += self.vel_y
+        self.on_ground = False
+        for p in platforms:
+            if self.hit_rect.colliderect(p.rect):
+                if self.vel_y > 0:
+                    self.hit_rect.bottom = p.rect.top
+                    self.vel_y = 0
+                    self.on_ground = True
+                elif self.vel_y < 0:
+                    self.hit_rect.top = p.rect.bottom
+                    self.vel_y = 0
+
+        self.rect.topleft = (self.hit_rect.x - self.hit_offset_x,
+                             self.hit_rect.y - self.hit_offset_y)
+        self.saved_pos = self.rect.topleft
+
+    def update(self, platforms):
+        # Only active in puzzle mask
+        if current_mask == 2:
+            self.active_in_game = True
+        else:
+            # Save last position, disable collisions
+            if self.active_in_game:
+                self.saved_pos = self.rect.topleft
+            self.active_in_game = False
+            return  # skip update if not puzzle mask
+
         self.apply_gravity()
         self.move_and_collide(platforms)
-
-        # Friction
         self.vel_x *= 0.8
         if abs(self.vel_x) < 0.1:
             self.vel_x = 0
 
-        # Sync rect
-        self.rect.topleft = (self.hit_rect.x - self.hit_offset_x,
-                            self.hit_rect.y - self.hit_offset_y)
-
 
     def draw(self, surface):
+        if not self.active_in_game:
+            return
         if self.image:
             surface.blit(self.image, self.rect.topleft)
         else:
             pygame.draw.rect(surface, (200, 100, 50), self.rect)
         if DEBUG:
             pygame.draw.rect(surface, (255, 0, 0), self.hit_rect, 2)
+
+
+class Trolley(Box):
+    def __init__(self, x, y, width, height, image_path, hit_shrink_x=0, hit_shrink_y=25):
+        super().__init__(
+            x=x,
+            y=y,
+            width=width,
+            height=height,
+            image_path=image_path
+        )
+
+        self.hit_offset_x += hit_shrink_x // 2
+        self.hit_offset_y += hit_shrink_y // 1
+        self.hitbox_size = self.hitbox_size - hit_shrink_x
+        self.hit_rect = pygame.Rect(
+            self.rect.x + self.hit_offset_x,
+            self.rect.y + self.hit_offset_y,
+            self.hitbox_size,
+            self.hitbox_size - hit_shrink_y
+        )
+
+    def blocked_horizontally(self, platforms, direction):
+        if not self.active_in_game:
+            return False
+        test = self.hit_rect.copy()
+        test.x += direction
+        for p in platforms:
+            if test.colliderect(p.rect):
+                return True
+        return False
+
+
+
 
 
 
@@ -497,19 +524,135 @@ class Enemy:
 
 enemy = Enemy(600, 384)
 
+
+
+def player_on_real_ground(player_rect, platforms):
+    for p in platforms:
+        # must be standing ON TOP, not inside
+        if (
+            player_rect.bottom == p.rect.top and
+            player_rect.right > p.rect.left and
+            player_rect.left < p.rect.right
+        ):
+            return True
+    return False
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# --- Cone check helper ---
+def point_in_cone(point, cone_origin, cone_angle, cone_length=250, cone_width=60):
+    dx = point[0] - cone_origin[0]
+    dy = point[1] - cone_origin[1]
+    distance = math.hypot(dx, dy)
+    if distance > cone_length:
+        return False
+
+    angle_to_point = math.degrees(math.atan2(dy, dx))
+
+    # Normalize angles between -180 and 180
+    def normalize_angle(a):
+        while a <= -180: a += 360
+        while a > 180: a -= 360
+        return a
+
+    diff = normalize_angle(angle_to_point - cone_angle)
+    return abs(diff) <= cone_width / 2
+
+
+# --- Object in light check ---
+def is_in_light(obj_rect, player_center, player_angle):
+    return point_in_cone(obj_rect.center, player_center, player_angle)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # -------- GAME LOOP --------
 running = True
-
-# --- Box setup ---
-box_spawned = False
+last_safe_pos = player.topleft
 boxes = []
+trolleys = []
+box_spawned = False
+trolley_spawned = False
 
+player_on_box = None
+player_on_trolley = None
+
+# --- Cone check helper ---
+import math
+
+def point_in_cone(point, cone_origin, cone_angle, cone_length=250, cone_width=60):
+    dx = point[0] - cone_origin[0]
+    dy = point[1] - cone_origin[1]
+    distance = math.hypot(dx, dy)
+    if distance > cone_length:
+        return False
+
+    angle_to_point = math.degrees(math.atan2(dy, dx))
+
+    # Normalize angles between -180 and 180
+    def normalize_angle(a):
+        while a <= -180: a += 360
+        while a > 180: a -= 360
+        return a
+
+    diff = normalize_angle(angle_to_point - cone_angle)
+    return abs(diff) <= cone_width / 2
+
+def is_in_light(obj_rect, player_center, player_angle):
+    return point_in_cone(obj_rect.center, player_center, player_angle)
+
+# -------- GAME LOOP START --------
 while running:
+    
     clock.tick(FPS)
-
-    # -------- AIMING / CONE ROTATION --------
     keys = pygame.key.get_pressed()
 
+    # --- AIMING / CONE ROTATION ---
     if keys[pygame.K_w]:
         target_angle = -90
         if keys[pygame.K_a]: target_angle = -135
@@ -521,111 +664,138 @@ while running:
     else:
         if keys[pygame.K_a]: target_angle = 180
         if keys[pygame.K_d]: target_angle = 0
-
     facing_angle += (target_angle - facing_angle) * 0.25
 
-    # -------- EVENTS --------
+    # --- EVENTS ---
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
             running = False
         if e.type == pygame.KEYDOWN:
-            if e.key == pygame.K_ESCAPE:
-                running = False
+            if e.key == pygame.K_ESCAPE: running = False
             if e.key == pygame.K_1: current_mask = MASKLESS
             if e.key == pygame.K_2: current_mask = 0
             if e.key == pygame.K_3: current_mask = 1
             if e.key == pygame.K_4: current_mask = 2
             if e.key == pygame.K_F3: DEBUG = not DEBUG
 
-    # -------- INPUT / MOVEMENT --------
+    # --- INPUT / MOVEMENT ---
     vel_x = (-SPEED if keys[pygame.K_a] else SPEED if keys[pygame.K_d] else 0)
-    if vel_x != 0:
-        facing_right = vel_x > 0
+    if vel_x != 0: facing_right = vel_x > 0
 
-    # -------- SPRITE SELECTION --------
     state = "run" if vel_x != 0 else "idle"
     sprites = PLAYER_SPRITES.get(current_mask, PLAYER_SPRITES[MASKLESS])
     current_player_img = sprites[state]
 
-    # -------- PLAYER PHYSICS --------
+    # --- PLAYER PHYSICS ---
     vel_y = min(vel_y + GRAVITY, 18)
     player, vel_y = move_and_collide(player, vel_x, vel_y)
-    
 
-    # -------- PLAYER COLLISION WITH BOXES --------
-    for box in boxes:
-        # --- Horizontal collision (push box) ---
-        if player.colliderect(box.hit_rect):
-            if vel_x != 0 and player.colliderect(box.hit_rect):
-                if vel_x > 0:
-                    player.right = box.hit_rect.left
-                elif vel_x < 0:
-                    player.left = box.hit_rect.right
+    # --- PLAYER COLLISION WITH BOXES AND TROLLEYS (ONLY PUZZLE MASK) ---
+    player_on_box = None
+    player_on_trolley = None
 
-                # Apply a fraction of the player speed to the box
-                push_strength = 0.35  # tweak this between 0.1 and 0.5
-                box.vel_x += vel_x * push_strength
-
-
-        # --- Vertical collision (stand on box) ---
-        # Only consider if player is falling
-        if vel_y >= 0 and player.bottom <= box.hit_rect.bottom:
-            if player.colliderect(box.hit_rect):
-                player.bottom = box.hit_rect.top
-                vel_y = 0
-                on_ground = True
-
-        player_on_box = None
+    if current_mask == 2:  # Only collide in puzzle mask
         for box in boxes:
-            if player.bottom == box.hit_rect.top and \
-            player.right > box.hit_rect.left and player.left < box.hit_rect.right:
-                player_on_box = box
-                on_ground = True
-                vel_y = 0
-                break
+            # Horizontal push
+            if player.colliderect(box.hit_rect) and vel_x != 0:
+                if vel_x > 0: player.right = box.hit_rect.left
+                elif vel_x < 0: player.left = box.hit_rect.right
+                box.vel_x += vel_x * 0.35
 
+            # Vertical collision (standing on box)
+            if vel_y >= 0 and player.bottom <= box.hit_rect.bottom:
+                if player.colliderect(box.hit_rect):
+                    player.bottom = box.hit_rect.top
+                    vel_y = 0
+                    on_ground = True
+                    player_on_box = box
 
+        for trolley in trolleys:
+            # Horizontal push
+            if player.colliderect(trolley.hit_rect) and vel_x != 0:
+                if vel_x > 0: player.right = trolley.hit_rect.left
+                elif vel_x < 0: player.left = trolley.hit_rect.right
+                trolley.vel_x += vel_x * 0.35
 
+            # Vertical collision (standing on trolley)
+            if vel_y >= 0 and player.bottom <= trolley.hit_rect.bottom:
+                if player.colliderect(trolley.hit_rect):
+                    player.bottom = trolley.hit_rect.top
+                    vel_y = 0
+                    on_ground = True
+                    player_on_trolley = trolley
 
-    # -------- JUMP --------
-    if keys[pygame.K_SPACE]:
-        if on_ground and not jump_held:
-            vel_y = -JUMP
-            jump_held = True
+    # --- BOX + TROLLEY MERGE INTO BOX WITH WHEELS ---
+    if current_mask == 2:
+        new_boxes = []
+        new_trolleys = []
+        for box in boxes:
+            merged = False
+            for trolley in trolleys:
+                if box.hit_rect.colliderect(trolley.hit_rect):
+                    box_with_wheels_image = "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BoxWithWheels.png"
+                    merged_box = Box(box.hit_rect.x - box.hit_offset_x,
+                                     box.hit_rect.y - box.hit_offset_y,
+                                     box.rect.width,
+                                     box.rect.height,
+                                     box_with_wheels_image)
+                    new_boxes.append(merged_box)
+                    merged = True
+                    break
+            if not merged:
+                new_boxes.append(box)
+        for trolley in trolleys:
+            if not any(box.hit_rect.colliderect(trolley.hit_rect) for box in boxes):
+                new_trolleys.append(trolley)
+        boxes = new_boxes
+        trolleys = new_trolleys
+
+    # --- UPDATE LAST SAFE POSITION ---
+    inside_screen = 0 <= player.left <= WIDTH - player.width and 0 <= player.top <= HEIGHT - player.height
+    on_platform_top = any(player.bottom == p.rect.top and player.right > p.rect.left and player.left < p.rect.right for p in platforms)
+
+    if inside_screen and on_platform_top:
+        last_safe_pos = player.topleft
+
+    # --- TELEPORT BACK IF OUT OF SCREEN OR INSIDE WALL ---
+    colliding_with_wall = any(player.colliderect(p.rect) for p in platforms)
+    if player.left < 0 or player.right > WIDTH or player.top < 0 or player.bottom > HEIGHT or colliding_with_wall:
+        if last_safe_pos:
+            player.topleft = last_safe_pos
+            vel_x = 0
+            vel_y = 0
+
+    # --- JUMP ---
+    if keys[pygame.K_SPACE] and on_ground and not jump_held:
+        vel_y = -JUMP
+        jump_held = True
     else:
         jump_held = False
 
-    # -------- ENEMY UPDATE --------
+    # --- ENEMY UPDATE ---
     enemy.update(player)
 
-    # -------- BOX SPAWN (example for Level 1) --------
+    # --- BOX SPAWN ---
     if not box_spawned:
-        # Use forward slashes to avoid FileNotFoundError
         box_image_path = "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BigBoxLevel1 .png"
-
-        new_box = Box(
-            x=600,
-            y=-100,
-            width=128,
-            height=128,
-            image_path=box_image_path
-        )
-        
-        boxes.append(new_box)
+        boxes.append(Box(600, -100, 128, 128, box_image_path))
         box_spawned = True
 
-    # -------- UPDATE BOXES --------
-    for box in boxes:
-        box.update(platforms)  # apply gravity and collisions
+    # --- TROLLEY SPAWN ---
+    if not trolley_spawned:
+        trolley_image_path = "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BoxTrolly.png"
+        trolleys.append(Trolley(800, -100, 128, 128, trolley_image_path))
+        trolley_spawned = True
 
-    # -------- DRAW --------
+    # --- UPDATE BOXES / TROLLEYS (ONLY IN PUZZLE MASK) ---
+    if current_mask == 2:
+        for box in boxes: box.update(platforms)
+        for trolley in trolleys: trolley.update(platforms)
+
+    # --- DRAW ---
     screen.fill(AMBIENT_DARK)
+    for p in platforms: p.draw()
 
-    # Draw platforms
-    for p in platforms:
-        p.draw()
-
-    # Draw enemy vision outline in debug mode
     if DEBUG:
         enemy_vision = get_enemy_vision_polygon(enemy)
         color = ENEMY_DEBUG_COLOR_ALERT if enemy.alerted else ENEMY_DEBUG_COLOR_IDLE
@@ -633,34 +803,31 @@ while running:
 
     vision_poly = get_vision_polygon(player.center)
     draw_light(player.center)
-
-    # Draw enemies
     enemy.draw_body(vision_poly)
     enemy.draw_eyes()
 
-    # Draw boxes on top of platforms but below player
-    for box in boxes:
-        box.draw(screen)
+    # --- DRAW BOXES/TROLLEYS ONLY IF IN LIGHT ---
+    if current_mask == 2:
+        for box in boxes:
+            if DEBUG or is_in_light(box.rect, player.center, facing_angle):
+                box.draw(screen)
+        for trolley in trolleys:
+            if DEBUG or is_in_light(trolley.rect, player.center, facing_angle):
+                trolley.draw(screen)
 
-    # Draw player on top with flipping
     img_to_draw = current_player_img
-    if not facing_right:
-        img_to_draw = pygame.transform.flip(current_player_img, True, False)
+    if not facing_right: img_to_draw = pygame.transform.flip(current_player_img, True, False)
     screen.blit(img_to_draw, player.topleft)
-    # --- DEBUG: Draw player hitbox ---
+
     if DEBUG:
-        # shrink width by 10 and move 5 px right
-        hitbox_rect = pygame.Rect(
-            player.x + 5,   # move right
-            player.y,       # same vertical
-            player.width - 10,  # narrower
-            player.height
-        )
+        hitbox_rect = pygame.Rect(player.x + 5, player.y, player.width - 10, player.height)
         pygame.draw.rect(screen, (0, 255, 0), hitbox_rect, 2)
 
-
-
     pygame.display.flip()
+
+
+
+
 
 
 

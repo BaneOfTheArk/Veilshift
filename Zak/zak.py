@@ -4,6 +4,13 @@ import math
 
 pygame.init()
 
+# Get full monitor resolution for fullscreen
+info = pygame.display.Info()
+WIDTH, HEIGHT = info.current_w, info.current_h
+
+# Create the screen in fullscreen mode
+screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | pygame.FULLSCREEN)
+
 # ---------------- SETTINGS ----------------
 FPS = 60
 clock = pygame.time.Clock()
@@ -16,14 +23,19 @@ DEBUG = False
 MASKLESS = -1
 MASKLESS_COLOR = (255, 255, 255)
 
+# Helper Functions
+
 def get_mask_color():
     if current_mask == MASKLESS:
         return MASKLESS_COLOR
     return MASK_INFO[current_mask]["color"]
 
-# ---------------- COLORS ----------------
-AMBIENT_DARK = (18, 18, 22)
+def load_background(path):
+    """Load background and scale to full screen."""
+    img = pygame.image.load(path).convert()  # convert() for performance
+    return pygame.transform.scale(img, (WIDTH, HEIGHT))
 
+# ---------------- COLORS ----------------
 MASK_INFO = {
     0: {"color": (90, 140, 220)},   # Physical
     1: {"color": (200, 80, 80)},    # Spectral
@@ -39,7 +51,7 @@ PUZZLE_COLORS = [
     (80, 120, 220),  # Blue
 ]
 
-PUZZLE_SOLUTION = [0, 2, 1, 0]  # R, B, G, R
+PUZZLE_SOLUTION = [0, 2, 2, 1]  # R, B, B, R
 
 puzzle_open = False
 puzzle_values = [0, 0, 0, 0]  # indices into PUZZLE_COLORS
@@ -120,6 +132,33 @@ PLAYER_SPRITES = {
     },
 }
 
+# Backgrounds
+BACKGROUND_1 = 0
+BACKGROUND_2 = 1
+BACKGROUND_3 = 2
+
+def load_background(path):
+    """Load and scale background to full screen."""
+    return pygame.transform.scale(
+        pygame.image.load(path).convert(),
+        (WIDTH, HEIGHT)
+    )
+
+# Registry of backgrounds
+BACKGROUNDS = {
+    BACKGROUND_1: load_background("Q:\Veilshift\Veilshift\Charlotte\Backgrounds\BackgroundA.png")
+    # BACKGROUND_2: load_background("Q:/Veilshift/Veilshift/Charlotte/BackgroundB.png"),
+    # BACKGROUND_3: load_background("Q:/Veilshift/Veilshift/Charlotte/BackgroundC.png"),
+}
+
+current_background = BACKGROUND_1
+
+def draw_background():
+    """Draw the current background full-screen."""
+    screen.blit(BACKGROUNDS[current_background], (0, 0))
+
+
+# Player Variables/Constants
 vel_x = 0
 vel_y = 0
 SPEED = 6
@@ -136,6 +175,26 @@ pulse_timer = 0.0
 MIN_PULSE_RADIUS = 20
 MAX_PULSE_RADIUS = 20
 PULSE_SPEED = 0.0
+
+# Hints stuff
+# Number of hints for each type
+HINT_COUNTS = {
+    "Red": 1,
+    "Green": 1,
+    "Blue": 2,
+}
+
+HINT_IMAGES = {
+    "Red": pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\Red.png").convert_alpha(),
+    "Green": pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\Green.png").convert_alpha(),
+    "Blue": pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\Blue.png").convert_alpha(),
+}
+
+HINT_POSITIONS = {
+    "Red": [(200, 550)],
+    "Green": [(800, 550)],
+    "Blue": [(400, 550), (600, 550)],
+}
 
 # Enemy image
 enemy1_img = pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\ShadowMonster.png"
@@ -162,9 +221,10 @@ ENEMY_DEBUG_COLOR_ALERT = (255, 80, 80, 80) # red
 
 # ---------------- PLATFORM ----------------
 class Platform:
-    def __init__(self, rect, masks=None):
+    def __init__(self, rect, masks=None, visible=True):
         self.rect = pygame.Rect(rect)
         self.masks = masks  # None = always visible
+        self.visible = visible  # Can hide walls/platforms
 
     def active(self):
         if current_mask == MASKLESS:
@@ -174,7 +234,7 @@ class Platform:
         return current_mask in self.masks
 
     def draw(self):
-        if not self.active():
+        if not self.active() or not self.visible:
             return
         base = get_mask_color()
         color = tuple(min(255, c + 20) for c in base)
@@ -183,9 +243,9 @@ class Platform:
 # ---------------- LEVEL ----------------
 def load_level():
     return [
-        Platform((0, 680, 1280, 40), None),     # Floor always visible
-        Platform((0, 0, 40, 720), None),        # Left wall always visible
-        Platform((1240, 0, 40, 720), None),     # Right wall always visible
+        Platform((0, 680, 1280, 40), None, visible=True),     # Floor always visible
+        Platform((0, 0, 40, 720), None, visible=True),        # Left wall always visible
+        Platform((1240, 0, 40, 720), None, visible=True),     # Right wall always visible
 
 
         Platform((200, 580, 200, 25), [0]),     # Mask-specific platforms
@@ -204,8 +264,8 @@ def move_and_collide(rect, dx, dy):
 
     rect.x += dx
     for p in platforms:
-        # Always check collision, even if platform is not active
-        if rect.colliderect(p.rect):
+        # Only collide if platform is active for current mask
+        if p.active() and rect.colliderect(p.rect):
             if dx > 0:
                 rect.right = p.rect.left
             elif dx < 0:
@@ -214,7 +274,7 @@ def move_and_collide(rect, dx, dy):
     rect.y += dy
     on_ground = False
     for p in platforms:
-        if rect.colliderect(p.rect):
+        if p.active() and rect.colliderect(p.rect):
             if dy > 0:
                 rect.bottom = p.rect.top
                 on_ground = True
@@ -299,40 +359,48 @@ def point_in_polygon(point, poly):
 
 def draw_light(origin):
     global pulse_timer
+
+    # Clear the light surface every frame
+    light_surface.fill((0, 0, 0, 180))
+
     if DEBUG:
+        # Clear the screen for debug mode too
+        screen.fill((30, 30, 30))  # simple dark grey for debug
+        for p in platforms:
+            if p.active():
+                p.draw()
+        # Skip lighting entirely in debug
         return
 
-    light_surface.fill((0, 0, 0, 255))
-
-    # --- Mini pulsing spotlight around player ---
+    # --- Mini pulsing spotlight ---
     pulse_timer += 1 / FPS
     pulse_radius = MIN_PULSE_RADIUS + (MAX_PULSE_RADIUS - MIN_PULSE_RADIUS) * (
         0.5 + 0.5 * math.sin(pulse_timer * PULSE_SPEED * math.pi)
     )
-    mini_spot = pygame.Surface((pulse_radius*2, pulse_radius*2), pygame.SRCALPHA)
-    pygame.draw.circle(mini_spot, (255, 255, 200, 100), (pulse_radius, pulse_radius), int(pulse_radius))
-    light_surface.blit(mini_spot, (origin[0]-pulse_radius, origin[1]-pulse_radius), special_flags=pygame.BLEND_RGBA_ADD)
+    mini_spot = pygame.Surface((pulse_radius * 2, pulse_radius * 2), pygame.SRCALPHA)
+    pygame.draw.circle(
+        mini_spot,
+        (255, 255, 200, 100),
+        (pulse_radius, pulse_radius),
+        int(pulse_radius)
+    )
+    light_surface.blit(
+        mini_spot,
+        (origin[0] - pulse_radius, origin[1] - pulse_radius),
+        special_flags=pygame.BLEND_RGBA_ADD
+    )
 
     # --- Main cone light ---
     poly = get_vision_polygon(origin)
     pygame.draw.polygon(light_surface, (255, 255, 180, 200), poly)
 
-    # --- Cone gradient ---
-    gradient = pygame.Surface((LIGHT_RADIUS*2, LIGHT_RADIUS*2), pygame.SRCALPHA)
-    center = LIGHT_RADIUS
-    for r in range(LIGHT_RADIUS, 0, -1):
-        alpha = int(200 * (r / LIGHT_RADIUS))
-        pygame.draw.circle(gradient, (255, 255, 220, alpha), (center, center), r)
-    rot = pygame.transform.rotate(gradient, -facing_angle)
-    rect = rot.get_rect(center=origin)
-    light_surface.blit(rot, rect.topleft, special_flags=pygame.BLEND_RGBA_MULT)
-
-    # --- Draw light on screen ---
-    screen.fill(AMBIENT_DARK)  # Base ambient dark
+    # --- Draw background and platforms ---
+    draw_background()
     for p in platforms:
-        if p.active():  # only draw visible platforms
-            p.draw()
-    screen.blit(light_surface, (0,0), special_flags=pygame.BLEND_RGBA_MULT)
+        p.draw()
+
+    # --- Apply lighting ---
+    screen.blit(light_surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 
 # ---------------- ENEMY ----------------
 class Enemy:
@@ -441,6 +509,14 @@ while running:
                 if distance <= PUZZLE_OPEN_DISTANCE and current_mask == 2:
                     puzzle_open = True
 
+                if e.type == pygame.KEYDOWN:
+                    if e.key == pygame.K_F1:
+                        current_background = BACKGROUND_1
+                    # if e.key == pygame.K_F2:
+                    #     current_background = BACKGROUND_2
+                    # if e.key == pygame.K_F3:
+                    #     current_background = BACKGROUND_3
+
         # Handle puzzle clicks
         if e.type == pygame.MOUSEBUTTONDOWN and puzzle_open and current_mask == 2:
             mx, my = pygame.mouse.get_pos()
@@ -492,21 +568,35 @@ while running:
     enemy.update(player)
 
     # -------- DRAW --------
-    screen.fill(AMBIENT_DARK)
+    def draw_background():
+        screen.blit(BACKGROUNDS[current_background], (0, 0))
 
     # Draw platforms
     for p in platforms:
         p.draw()
 
-    # Draw enemy vision outline in debug mode
+# --- DEBUG OVERLAYS ---
     if DEBUG:
+        pygame.draw.polygon(screen, (0, 255, 255), vision_poly, width=2)
+        pygame.draw.rect(screen, (255, 0, 0), player, width=2)
+        pygame.draw.rect(screen, (255, 0, 255), enemy.rect, width=2)
         enemy_vision = get_enemy_vision_polygon(enemy)
         color = ENEMY_DEBUG_COLOR_ALERT if enemy.alerted else ENEMY_DEBUG_COLOR_IDLE
         pygame.draw.polygon(screen, color, enemy_vision, width=2)
 
-
     vision_poly = get_vision_polygon(player.center)
     draw_light(player.center)
+
+    # Only show hints if Maskless
+    if current_mask == MASKLESS:
+        for hint_type, positions in HINT_POSITIONS.items():
+            img = HINT_IMAGES[hint_type]
+            for pos in positions[:HINT_COUNTS[hint_type]]:
+                # Check if the center of the hint is inside the vision polygon
+                hint_rect = img.get_rect(topleft=pos)
+                hint_center = hint_rect.center
+                if point_in_polygon(hint_center, vision_poly):
+                    screen.blit(img, pos)
 
     # Draw enemies
     enemy.draw_body(vision_poly)
@@ -518,8 +608,8 @@ while running:
     distance = math.hypot(dx, dy)
 
     if distance <= PUZZLE_OPEN_DISTANCE and current_mask == 2:
-        pygame.draw.rect(screen, (20, 20, 20), PUZZLE_TRIGGER_RECT)
-        pygame.draw.rect(screen, (255, 255, 255), PUZZLE_TRIGGER_RECT, 2)
+        pygame.draw.rect(screen, (40, 40, 40), PUZZLE_TRIGGER_RECT)
+        pygame.draw.rect(screen, (90, 200, 130), PUZZLE_TRIGGER_RECT, 2)
 
     # Draw puzzle UI if open AND player has puzzle mask
     if puzzle_open and current_mask == 2:
