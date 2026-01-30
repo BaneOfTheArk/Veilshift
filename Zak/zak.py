@@ -3,6 +3,7 @@ import sys
 import math
 import random
 from pathlib import Path
+from credits import EndCredits
 
 pygame.init()
 
@@ -24,6 +25,10 @@ DEBUG = False
 
 MASKLESS = -1
 MASKLESS_COLOR = (255, 255, 255)
+
+# End Credit stuff
+show_end_credits = False
+end_credits = None
 
 # Helper Functions
 
@@ -104,6 +109,12 @@ player_health = MAX_HEALTH
 INVULN_TIME = 60  # frames
 damage_timer = 0
 
+# Door stuff idk
+# --- DOOR POSITION VARIABLES ---
+DOOR_X = 1180   # left/right position
+DOOR_Y = 540    # top/bottom position
+DOOR_WIDTH = 50
+DOOR_HEIGHT = 100
 
 # ---------------- PLAYER SPRITES ----------------
 
@@ -168,6 +179,10 @@ PLAYER_SPRITES = {
         ),
     },
 }
+
+# Homescreen
+home_screen_img = pygame.image.load("Charlotte/HomeScreen.png").convert_alpha()
+home_screen_img = pygame.transform.scale(home_screen_img, (WIDTH, HEIGHT))
 
 # Backgrounds
 BACKGROUND_1 = 0
@@ -327,6 +342,7 @@ class Box:
         self.on_ground = False
         self.saved_pos = self.rect.topleft
         self.active_in_game = True  # Only active in puzzle mask
+        self.image_path = image_path
 
         if image_path:
             self.image = pygame.image.load(image_path).convert_alpha()
@@ -446,6 +462,79 @@ class Trolley(Box):
             if test.colliderect(p.rect):
                 return True
         return False
+    
+class PressurePlate:
+    def __init__(self, x, y, w, h, plate_img_path, door_x, door_y, door_w, door_h, door_img_path):
+        # --- PRESSURE PLATE HITBOX ---
+        self.rect = pygame.Rect(x, y, w, h)
+
+        # --- LOAD PLATE IMAGE ---
+        plate_image_width = 140
+        plate_image_height = 140
+        self.image = pygame.image.load(plate_img_path).convert_alpha()
+        self.image = pygame.transform.scale(self.image, (plate_image_width, plate_image_height))
+        self.image_offset_x = self.rect.centerx - plate_image_width // 2
+        self.image_offset_y = self.rect.bottom - plate_image_height - 17.5
+
+        # --- DOOR HITBOX ---
+        self.door_rect = pygame.Rect(door_x, door_y, door_w, door_h)
+
+        # --- LOAD DOOR IMAGE ---
+        self.door_image = pygame.image.load(door_img_path).convert_alpha()
+        door_image_width = 150
+        door_image_height = 150
+        self.door_image = pygame.transform.scale(self.door_image, (door_image_width, door_image_height))
+
+        # --- CENTER IMAGE ON HITBOX ---
+        self.door_image_offset_x = self.door_rect.centerx - door_image_width // 2
+        self.door_image_offset_y = self.door_rect.centery - door_image_height // 2
+
+        # --- STATE ---
+        self.active = False
+
+    def update(self, boxes):
+        self.active = False
+        for box in boxes:
+            # Must be touching the pressure plate hitbox
+            if not self.rect.colliderect(box.hit_rect):
+                continue
+
+            # Must be the BoxWithWheels sprite
+            if hasattr(box, "image_path") and "BoxWithWheels.png" in box.image_path:
+                self.active = True
+                break
+
+    def draw(self, screen, mask, player_center, facing_angle):
+        # --- PRESSURE PLATE ---
+        if mask == 2:  # Only Puzzle Mask
+            # Always draw the plate (no light check)
+            screen.blit(self.image, (self.image_offset_x, self.image_offset_y))
+
+            if DEBUG:
+                pygame.draw.rect(screen, (255, 0, 0), self.rect, 2)
+
+        # --- DOOR ---
+        if self.active:
+            # Only draw door if in light cone OR DEBUG
+            if DEBUG or is_in_light(self.door_rect, player_center, facing_angle):
+                screen.blit(self.door_image, (self.door_image_offset_x, self.door_image_offset_y))
+
+            if DEBUG:
+                pygame.draw.rect(screen, (0, 0, 255), self.door_rect, 2)
+
+FLOOR_Y = 680
+TROLLEY_HEIGHT = 40  # example height of the trolley
+PLATE_HEIGHT = 95
+
+# Set plate y so top of plate sits on top of the floor / trolley
+pressure_plate_y = FLOOR_Y - PLATE_HEIGHT
+
+pressure_plate = PressurePlate(
+    1000, pressure_plate_y, 30, PLATE_HEIGHT,  # Plate hitbox aligned to top of floor
+    "Charlotte/PreasurePlate.png",
+    DOOR_X, DOOR_Y, DOOR_WIDTH, DOOR_HEIGHT,
+    "Charlotte/BackgroundAssets/Door.png"
+)
 
 # ---------------- PUZZLE TRIGGER ----------------
 class PuzzleTrigger:
@@ -855,6 +944,23 @@ enemy = Enemy(600, 384)
 ghost = Ghost(400, 300)
 player_stunned_timer = 0
 
+waiting_for_input = True
+while waiting_for_input:
+    screen.fill((0, 0, 0))
+    screen.blit(home_screen_img, (0, 0))
+    pygame.display.flip()
+
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_RETURN:
+                waiting_for_input = False
+            if e.key == pygame.K_ESCAPE:
+                pygame.quit()
+                sys.exit()
+
 # -------- GAME LOOP --------
 running = True
 while running:
@@ -994,7 +1100,7 @@ while running:
             merged = False
             for trolley in trolleys:
                 if box.hit_rect.colliderect(trolley.hit_rect):
-                    box_with_wheels_image = "Veilshift/Charlotte/BackgroundAssets/BoxWithWheels.png"
+                    box_with_wheels_image = "Charlotte/BackgroundAssets/BoxWithWheels.png"
                     merged_box = Box(box.hit_rect.x - box.hit_offset_x,
                                      box.hit_rect.y - box.hit_offset_y,
                                      box.rect.width,
@@ -1021,6 +1127,22 @@ while running:
     if current_mask == 2:
         for box in boxes: box.update(platforms)
         for trolley in trolleys: trolley.update(platforms)
+
+    pressure_plate.update(boxes)
+
+    if (
+    pressure_plate.active
+    and player.colliderect(pressure_plate.door_rect)
+    and is_in_light(pressure_plate.door_rect, player.center, facing_angle)
+    and not show_end_credits
+    ):
+        show_end_credits = True
+
+    if show_end_credits:
+        end_credits = EndCredits(screen, pygame.image.load("Charlotte/PlayerSprites/PlayerIdleNoMask.png").convert_alpha(), "Owen/Fonts/DefaultFont.ttf")
+        end_credits.run()
+        running = False
+        continue
 
         # -------- JUMP --------
     keys = pygame.key.get_pressed()
@@ -1092,6 +1214,9 @@ while running:
             pygame.draw.rect(screen, color, rect, border_radius=4)
 
 # --- DEBUG OVERLAYS ---
+    vision_poly = get_vision_polygon(player.center)
+    draw_light(player.center)
+
     if DEBUG:
         pygame.draw.polygon(screen, (0, 255, 255), vision_poly, width=2)
         pygame.draw.rect(screen, (255, 0, 0), player, width=2)
@@ -1102,9 +1227,14 @@ while running:
 
         if DEBUG and player_attack_timer > PLAYER_ATTACK_COOLDOWN - 2:
             pygame.draw.rect(screen, (255, 255, 0), get_player_attack_rect(), 2)
-
-    vision_poly = get_vision_polygon(player.center)
-    draw_light(player.center)
+    
+    # --- PRESSURE PLATE + DOOR (CORRECT DRAW ORDER) ---
+    pressure_plate.draw(
+        screen,
+        current_mask,
+        player.center,
+        facing_angle
+    )
 
     # Only show hints if Maskless
     if current_mask == MASKLESS:
