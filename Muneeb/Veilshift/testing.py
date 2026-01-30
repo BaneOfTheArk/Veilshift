@@ -15,5 +15,5 @@ pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | pygame.FULLSCREEN)
 clock = pygame.time.Clock()
 
-credits = EndCredits(screen, pygame.image.load(r"assets\PlayerIdleNoMask.png").convert_alpha())
+credits = EndCredits(screen, pygame.image.load(r"Charlotte\PlayerSprites\PlayerIdleNoMask.png").convert_alpha(), "Muneeb\Veilshift\assets\Fonts\DefaultFont.ttf")
 credits.run()

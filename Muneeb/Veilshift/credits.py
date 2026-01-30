@@ -4,193 +4,182 @@ import sys
 import random
 import math
 
+
+class ShootingStar:
+    def __init__(self, w, h):
+        self.x = random.randint(0, w)
+        self.y = random.randint(0, h // 2)
+        self.speed = random.uniform(600, 900)
+        self.angle = random.uniform(-0.6, -0.9)
+        self.life = random.uniform(0.3, 0.6)
+        self.timer = 0
+
+    def update(self, dt):
+        self.timer += dt
+        self.x += math.cos(self.angle) * self.speed * dt
+        self.y += math.sin(self.angle) * self.speed * dt
+
+    def draw(self, surf):
+        tail = 18
+        end_x = self.x - math.cos(self.angle) * tail
+        end_y = self.y - math.sin(self.angle) * tail
+        pygame.draw.line(surf, (200, 220, 255), (self.x, self.y), (end_x, end_y), 2)
+
+    def dead(self):
+        return self.timer >= self.life
+
+
 class EndCredits:
     """
-    Cinematic, pixel-styled end credits for Veilshift.
-    Features:
-    - Pixel fonts with shadows
-    - Scrolling text from left or right
-    - Small radial spotlight on player
-    - Wavy cone spotlight revealing each credit line
-    - Particle ambient effect
+    Stylised VEILSHIFT end credits.
+    - Starry void background with shooting stars
+    - Player falling down center
+    - Alternating left/right credits
+    - Simple, stable radial spotlight
     """
 
-    def __init__(self, screen, player_img=None):
+    def __init__(self, screen, player_img=None, font_path=None):
         self.screen = screen
-        self.width, self.height = screen.get_size()
+        self.w, self.h = screen.get_size()
 
         # ---------------- FONTS ----------------
-        self.pixel_font_title = pygame.font.SysFont("Courier", 48, bold=True)
-        self.pixel_font_text = pygame.font.SysFont("Courier", 28)
-        self.pixel_font_small = pygame.font.SysFont("Courier", 18, italic=True)
+        self.font_title = self._load_font(font_path, 44)
+        self.font_text = self._load_font(font_path, 26)
 
-        # ---------------- CREDITS CONTENT ----------------
+        # ---------------- CREDITS ----------------
         self.credits = [
-            ("VEILSHIFT", "A Game Jam Experience"),
-            ("CREATED BY", "Your Name"),
-            ("PROGRAMMING & DESIGN", "Your Name"),
-            ("ART & VISUALS", "Your Name"),
-            ("MUSIC & SOUND", "Composer Name"),
-            ("SPECIAL THANKS", "Friends, Mentors, Community"),
-            ("POWERED BY", "PYTHON & PYGAME"),
+            ("VEILSHIFT", ""),
+            ("A GAME JAM EXPERIENCE", ""),
             ("", ""),
-            ("THANK YOU FOR PLAYING!", ""),
+            ("CREATED BY", "YOUR NAME"),
+            ("PROGRAMMING & DESIGN", "YOUR NAME"),
+            ("ART & VISUALS", "YOUR NAME"),
+            ("MUSIC & SOUND", "COMPOSER NAME"),
             ("", ""),
+            ("THANK YOU FOR PLAYING", ""),
             ("END OF TRANSMISSION", ""),
         ]
 
-        # Randomly assign left/right entry for each credit line
-        self.entry_sides = [random.choice([-1, 1]) for _ in self.credits]
-
         # ---------------- SCROLL ----------------
-        self.start_y = self.height
-        self.speed = 70
+        self.scroll_y = self.h + 80
+        self.scroll_speed = 45
+
+        # ---------------- PLAYER ----------------
+        self.player_img = None
+        if isinstance(player_img, pygame.Surface):
+            self.player_img = pygame.transform.scale(player_img, (32, 32))
+        self.player_y = -48
+
+        # ---------------- STARS ----------------
+        self.stars = [
+            (random.randint(0, self.w), random.randint(0, self.h), random.randint(1, 2))
+            for _ in range(180)
+        ]
+        self.shooting_stars = []
+        self.star_timer = 0
+
+        # ---------------- LIGHT ----------------
+        self.dark_surface = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+        self.light_surface = pygame.Surface((self.w, self.h), pygame.SRCALPHA)
+
+        self.clock = pygame.time.Clock()
         self.running = True
 
-        # ---------------- BACKGROUND ----------------
-        self.bg_surface = pygame.Surface((self.width, self.height))
-        self.bg_surface.fill((10, 10, 10))
+    # ---------------- UTIL ----------------
+    def _load_font(self, path, size):
+        if path:
+            try:
+                return pygame.font.Font(path, size)
+            except Exception:
+                pass
+        return pygame.font.SysFont("Courier", size, bold=True)
 
-        # ---------------- PARTICLES ----------------
-        self.particles = [
-            [random.uniform(0, self.width), random.uniform(0, self.height),
-             random.uniform(0.2, 1.0)]
-            for _ in range(200)
-        ]
+    # ---------------- DRAW HELPERS ----------------
+    def draw_stars(self):
+        for x, y, r in self.stars:
+            pygame.draw.circle(self.screen, (160, 170, 200), (x, y), r)
 
-        # ---------------- PLAYER SPRITE ----------------
-        if player_img:
-            if isinstance(player_img, pygame.Surface):
-                self.player_img = pygame.transform.scale(player_img, (32, 32))
-            else:
-                self.player_img = pygame.transform.scale(pygame.image.load(player_img).convert_alpha(), (32, 32))
-        else:
-            self.player_img = None
-        self.player_y = -50  # start above screen
+    def draw_shooting_stars(self, dt):
+        self.star_timer += dt
+        if self.star_timer > random.uniform(1.2, 2.8):
+            self.star_timer = 0
+            self.shooting_stars.append(ShootingStar(self.w, self.h))
 
-        # ---------------- SPOTLIGHT SURFACES ----------------
-        self.spotlight_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
-        self.cone_surface = pygame.Surface((self.width, self.height), pygame.SRCALPHA)
+        for s in self.shooting_stars[:]:
+            s.update(dt)
+            s.draw(self.screen)
+            if s.dead():
+                self.shooting_stars.remove(s)
 
-        # ---------------- FADE ----------------
-        self.fade_surface = pygame.Surface((self.width, self.height))
-        self.fade_surface.fill((0, 0, 0))
-        self.fade_alpha = 255
-        self.fade_speed = 200
+    def draw_radial_light(self, pos):
+        radius = 90
+        for r in range(radius, 0, -5):
+            alpha = int(120 * (r / radius))
+            pygame.draw.circle(
+                self.light_surface,
+                (255, 255, 255, alpha),
+                pos,
+                r
+            )
 
-    # ---------------- HELPER FUNCTIONS ----------------
-    def draw_pixel_text(self, surf, text, font, color, x, y, shadow=True):
-        if shadow:
-            shadow_surf = font.render(text, True, (0, 0, 0))
-            surf.blit(shadow_surf, (x + 2, y + 2))
-        text_surf = font.render(text, True, color)
-        surf.blit(text_surf, (x, y))
-
-    def draw_particles(self, surf, dt):
-        for p in self.particles:
-            x, y, speed = p
-            alpha = int(100 + 155 * speed)
-            pygame.draw.rect(surf, (150, 150, 255, alpha), (int(x), int(y), 2, 2))
-            p[1] += 20 * speed * dt
-            if p[1] > self.height:
-                p[1] = -2
-                p[0] = random.uniform(0, self.width)
-
-    def draw_radial_spotlight(self, surf, player_pos):
-        # Small radial light around player
-        radius = 80
-        self.spotlight_surface.fill((0, 0, 0, 180))  # semi-dark
-        if self.player_img:
-            px, py = int(player_pos[0]), int(player_pos[1])
-            for r in range(radius, 0, -1):
-                alpha = int(200 * (r / radius) ** 2)
-                pygame.draw.circle(self.spotlight_surface, (255, 255, 255, alpha), (px, py), r)
-        surf.blit(self.spotlight_surface, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
-
-    def draw_cone_spotlight(self, surf, x, y, width=250, height=60, t=0):
-        """
-        Draw a wavy cone spotlight onto a credit line.
-        x, y: center position of the text
-        """
-        self.cone_surface.fill((0, 0, 0, 0))
-        points = []
-        wave_offset = t * 0.005
-        for i in range(0, width + 1, 5):
-            dx = i - width // 2
-            dy = math.sin(i * 0.2 + wave_offset) * 10
-            points.append((x + dx, y - height//2 + dy))
-        for i in range(width, -1, -5):
-            dx = i - width // 2
-            dy = math.sin(i * 0.2 + wave_offset + 3) * 10
-            points.append((x + dx, y + height//2 + dy))
-        pygame.draw.polygon(self.cone_surface, (255, 255, 255, 180), points)
-        surf.blit(self.cone_surface, (0, 0), special_flags=pygame.BLEND_RGBA_SUB)
-
-    # ---------------- MAIN LOOP ----------------
+    # ---------------- MAIN ----------------
     def run(self):
-        clock = pygame.time.Clock()
-        y = self.start_y
-        t = 0
-
         while self.running:
-            dt = clock.tick(60) / 1000
-            t += dt * 1000
-            y -= self.speed * dt
-            self.player_y += self.speed * dt * 0.2
-            player_pos = [self.width // 2, self.player_y]
+            dt = self.clock.tick(60) / 1000
+            self.scroll_y -= self.scroll_speed * dt
+            self.player_y += self.scroll_speed * dt * 0.25
 
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
-                if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_ESCAPE:
-                        self.running = False
+                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    self.running = False
 
-            # ---------------- DRAW BACKGROUND ----------------
-            self.screen.blit(self.bg_surface, (0, 0))
-            self.draw_particles(self.screen, dt)
+            # ---------------- BACKGROUND ----------------
+            self.screen.fill((5, 6, 10))
+            self.draw_stars()
+            self.draw_shooting_stars(dt)
 
-            # ---------------- DRAW CREDITS ----------------
-            current_y = y
-            for idx, (title, subtitle) in enumerate(self.credits):
-                side = self.entry_sides[idx]
-                entry_offset = side * max(0, 300 - (self.height - current_y)/2)  # slide in from left/right
-                text_x_center = self.width // 2 + entry_offset
+            # ---------------- CREDITS ----------------
+            current_y = self.scroll_y
+            left = True
+            spotlight_target = None
 
-                # Draw wavy cone spotlight on this line
-                self.draw_cone_spotlight(self.screen, text_x_center, int(current_y), width=250, height=50, t=t)
-
+            for title, subtitle in self.credits:
                 if title:
-                    color = (200, 200, 255)
-                    x = text_x_center - len(title) * 12
-                    self.draw_pixel_text(self.screen, title, self.pixel_font_title, color, x, int(current_y))
-                    current_y += 50
+                    surf = self.font_title.render(title, True, (210, 220, 255))
+                    x = 80 if left else self.w - surf.get_width() - 80
+                    self.screen.blit(surf, (x, current_y))
+                    spotlight_target = surf.get_rect(topleft=(x, current_y)).center
+                    current_y += 46
+
                 if subtitle:
-                    color = (150, 200, 255)
-                    x = text_x_center - len(subtitle) * 8
-                    self.draw_pixel_text(self.screen, subtitle, self.pixel_font_text, color, x, int(current_y))
-                    current_y += 36
-                current_y += 10
+                    surf = self.font_text.render(subtitle, True, (160, 190, 255))
+                    x = 100 if left else self.w - surf.get_width() - 100
+                    self.screen.blit(surf, (x, current_y))
+                    spotlight_target = surf.get_rect(topleft=(x, current_y)).center
+                    current_y += 32
 
-            # ---------------- PLAYER RADIAL SPOTLIGHT ----------------
-            self.draw_radial_spotlight(self.screen, player_pos)
+                current_y += 26
+                left = not left
 
-            # ---------------- DRAW PLAYER SPRITE ----------------
+            # ---------------- LIGHTING ----------------
+            self.dark_surface.fill((0, 0, 0, 200))
+            self.light_surface.fill((0, 0, 0, 0))
+
             if self.player_img:
-                self.screen.blit(self.player_img, (self.width // 2 - 16, int(self.player_y)))
+                player_pos = (self.w // 2 - 16, int(self.player_y))
+                self.screen.blit(self.player_img, player_pos)
+                self.draw_radial_light((self.w // 2, int(self.player_y + 16)))
 
-            # ---------------- FADE ----------------
-            if y > self.height / 2:
-                self.fade_alpha = max(0, self.fade_alpha - self.fade_speed * dt)
-            elif current_y < 0:
-                self.fade_alpha = min(255, self.fade_alpha + self.fade_speed * dt)
-
-            if self.fade_alpha > 0:
-                self.fade_surface.set_alpha(int(self.fade_alpha))
-                self.screen.blit(self.fade_surface, (0, 0))
-
-            if current_y < 0 and self.fade_alpha >= 255:
-                self.running = False
+            self.dark_surface.blit(
+                self.light_surface,
+                (0, 0),
+                special_flags=pygame.BLEND_RGBA_SUB
+            )
+            self.screen.blit(self.dark_surface, (0, 0))
 
             pygame.display.flip()
+
+        return
