@@ -51,7 +51,7 @@ class EndCredits:
             ("VEILSHIFT", ""),
             ("A GAME JAM EXPERIENCE", ""),
             ("", ""),
-            ("CREATED BY", "YOUR NAME"),
+            ("CREATED BY", ""),
             ("PROGRAMMING & DESIGN", "YOUR NAME"),
             ("ART & VISUALS", "YOUR NAME"),
             ("MUSIC & SOUND", "COMPOSER NAME"),
