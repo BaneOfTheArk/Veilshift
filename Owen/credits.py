@@ -38,7 +38,7 @@ class EndCredits:
     - Simple, stable radial spotlight
     """
 
-    def __init__(self, screen, player_img=None, font_path="Muneeb\Veilshift\assets\Fonts"):
+    def __init__(self, screen, player_img=None, font_path=None):
         self.screen = screen
         self.w, self.h = screen.get_size()
 
