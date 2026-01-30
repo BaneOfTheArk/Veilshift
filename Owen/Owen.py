@@ -1,6 +1,8 @@
 import pygame
 import sys
 import math
+import random 
+from credits import EndCredits
 
 pygame.init()
 
@@ -22,6 +24,8 @@ boxes = []
 trolleys = []
 trolley_spawned = False
 
+show_end_credits = False
+end_credits = None
 
 
 def get_mask_color():
@@ -658,6 +662,12 @@ while running:
     clock.tick(FPS)
     keys = pygame.key.get_pressed()
 
+    if show_end_credits:
+        end_credits = EndCredits(screen, pygame.image.load(r"Charlotte\PlayerSprites\PlayerIdleNoMask.png").convert_alpha(), "Owen\Fonts\DefaultFont.ttf")
+        end_credits.run()
+        running = False
+        continue
+
     # --- AIMING / CONE ROTATION ---
     if keys[pygame.K_w]:
         target_angle = -90
@@ -808,6 +818,14 @@ while running:
     player_center=player.center,
     facing_angle=facing_angle
 )
+    # --- END CREDITS TRIGGER ---
+    if (
+        pressure_plate.active
+        and player.colliderect(pressure_plate.door_rect)
+        and is_in_light(pressure_plate.door_rect, player.center, facing_angle)
+        and not show_end_credits
+    ):
+        show_end_credits = True
 
 
     # --- PLAYER ---
