@@ -1,6 +1,8 @@
 import pygame
 import sys
 import math
+import random 
+from credits import EndCredits
 
 pygame.init()
 
@@ -22,6 +24,13 @@ boxes = []
 trolleys = []
 trolley_spawned = False
 
+show_end_credits = False
+end_credits = None
+
+home_screen_img = pygame.image.load(
+    r"Q:\Global game Jam\Veilshift\Charlotte\HomeScreen.png"
+).convert_alpha()
+home_screen_img = pygame.transform.scale(home_screen_img, (WIDTH, HEIGHT))
 
 
 def get_mask_color():
@@ -48,13 +57,13 @@ PLAYER_SPRITES = {
     MASKLESS: {
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerIdleNoMask.png"
+                "Charlotte\PlayerSprites\PlayerIdleNoMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerRunningNoMask.png"
+                "Charlotte\PlayerSprites\PlayerRunningNoMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -63,13 +72,13 @@ PLAYER_SPRITES = {
     0: {  # Spectral mask
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerIdlePlatformMask.png"
+                "Charlotte\PlayerSprites\PlayerIdlePlatformMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerRunningPlatformMask.png"
+                "Charlotte\PlayerSprites\PlayerRunningPlatformMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -78,13 +87,13 @@ PLAYER_SPRITES = {
     1: {  # Physical mask
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerIdleAttackMask.png"
+                "Charlotte\PlayerSprites\PlayerIdleAttackMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerRunningAttackMask.png"
+                "Charlotte\PlayerSprites\PlayerRunningAttackMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -93,13 +102,13 @@ PLAYER_SPRITES = {
     2: {  # Puzzle mask
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerIdlePuzzleMask.png"
+                "Charlotte\PlayerSprites\PlayerIdlePuzzleMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Global game Jam\Veilshift\Charlotte\PlayerSprites\PlayerRunningPuzzleMask.png"
+                "Charlotte\PlayerSprites\PlayerRunningPuzzleMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -127,7 +136,7 @@ MAX_PULSE_RADIUS = 20
 PULSE_SPEED = 0.0
 
 # Enemy image
-enemy1_img = pygame.image.load("Q:\Global game Jam\Veilshift\Charlotte\ShadowMonster.png"
+enemy1_img = pygame.image.load("Charlotte\ShadowMonster.png"
 ).convert_alpha()
 enemy1_img = pygame.transform.scale(enemy1_img, (CUBE_SIZE, CUBE_SIZE))
 
@@ -553,7 +562,14 @@ class PressurePlate:
         self.image_offset_y = self.rect.centery - plate_image_height // 2
 
         # --- DOOR HITBOX (DO NOT CHANGE UNLESS YOU WANT COLLISIONS TO CHANGE) ---
-        self.door_rect = pygame.Rect(door_x, door_y, door_w, door_h)  
+        self.door_rect = pygame.Rect(door_x + 100, door_y, door_w + 10, door_h)  
+
+        # --- HITBOX POSITION OFFSETS (TUNE THESE) ---
+        door_hitbox_offset_x = 20   # +right / -left
+        door_hitbox_offset_y = 10   # +down / -up
+
+        self.door_rect.x += door_hitbox_offset_x
+        self.door_rect.y += door_hitbox_offset_y
 
         # --- LOAD DOOR IMAGE ---
         self.door_image = pygame.image.load(door_img_path).convert_alpha()
@@ -564,41 +580,61 @@ class PressurePlate:
         door_image_height = 150    # <-- stretch taller
         self.door_image = pygame.transform.scale(self.door_image, (door_image_width, door_image_height))
 
-        # --- CENTER DOOR IMAGE ON HITBOX ---
-        self.door_image_offset_x = self.door_rect.centerx - door_image_width // 2
-        self.door_image_offset_y = self.door_rect.centery - door_image_height // 2
+        # --- IMAGE POSITION OFFSETS (VISUAL ONLY — SAFE TO TUNE) ---
+        door_image_offset_x = -5   # +right / -left
+        door_image_offset_y = 20   # +down / -up
+
+        # --- FINAL IMAGE POSITION (DOES NOT AFFECT HITBOX) ---
+        self.door_image_offset_x = (
+            self.door_rect.centerx - door_image_width // 2
+            + door_image_offset_x
+        )
+        self.door_image_offset_y = (
+            self.door_rect.centery - door_image_height // 2
+            + door_image_offset_y
+        )
 
         # --- STATE ---
         self.active = False
 
     def update(self, boxes):
-        # --- Check if any box is on the plate ---
         self.active = False
+
         for box in boxes:
-            if self.rect.colliderect(box.hit_rect):
+            # 1️⃣ Must be touching the pressure plate hitbox
+            if not self.rect.colliderect(box.hit_rect):
+                continue
+
+            # 2️⃣ Must be the BoxWithWheels sprite
+            # This assumes box.image_path exists (which it does in your Box class)
+            if hasattr(box, "image_path") and "BoxWithWheels.png" in box.image_path:
                 self.active = True
                 break
 
-    def draw(self, screen, mask):
-        # --- Plate visible only in puzzle mask ---
+
+    def draw(self, screen, mask, player_center, facing_angle):
+        # --- PRESSURE PLATE ---
         if mask == 2:
-            screen.blit(self.image, (self.image_offset_x, self.image_offset_y))
-            if DEBUG:
-                pygame.draw.rect(screen, (255, 0, 0), self.rect, 2)  # show hitbox for debugging
+            if DEBUG or is_in_light(self.rect, player_center, facing_angle):
+                screen.blit(self.image, (self.image_offset_x, self.image_offset_y))
 
-        # --- Door appears ONLY when plate is active ---
+            if DEBUG:
+                pygame.draw.rect(screen, (255, 0, 0), self.rect, 2)
+
+        # --- DOOR ---
         if self.active:
-            screen.blit(self.door_image, (self.door_image_offset_x, self.door_image_offset_y))
-            if DEBUG:
-                pygame.draw.rect(screen, (0, 0, 255), self.door_rect, 2)  # show hitbox for debugging
+            if DEBUG or is_in_light(self.door_rect, player_center, facing_angle):
+                screen.blit(self.door_image, (self.door_image_offset_x, self.door_image_offset_y))
 
+            if DEBUG:
+                pygame.draw.rect(screen, (0, 0, 255), self.door_rect, 2)
 
 
 pressure_plate = PressurePlate(
     500, 640, 30, 20,  # Plate x, y, width, height
-    "Q:/Global game Jam/Veilshift/Charlotte/PreasurePlate.png",
+    "Charlotte/PreasurePlate.png",
     500, 576, 30, 60,  # Door x, y, width, height
-    "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/Door.png"
+    "Charlotte/BackgroundAssets/Door.png"
 )
 
 
@@ -630,6 +666,23 @@ def is_in_light(obj_rect, player_center, player_angle):
     return point_in_cone(obj_rect.center, player_center, player_angle)
 
 
+# --- HOME SCREEN ---
+waiting_for_input = True
+while waiting_for_input:
+    screen.fill((0, 0, 0))  # Optional: black background
+    screen.blit(home_screen_img, (0, 0))
+    pygame.display.flip()
+
+    for e in pygame.event.get():
+        if e.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+        if e.type == pygame.KEYDOWN:
+            if e.key == pygame.K_RETURN:  # Press Enter to start
+                waiting_for_input = False
+            if e.key == pygame.K_ESCAPE:  # Optional: Escape to quit
+                pygame.quit()
+                sys.exit()
 
 
 
@@ -647,6 +700,12 @@ player_on_trolley = None
 while running:
     clock.tick(FPS)
     keys = pygame.key.get_pressed()
+
+    if show_end_credits:
+        end_credits = EndCredits(screen, pygame.image.load(r"Charlotte\PlayerSprites\PlayerIdleNoMask.png").convert_alpha(), "Owen\Fonts\DefaultFont.ttf")
+        end_credits.run()
+        running = False
+        continue
 
     # --- AIMING / CONE ROTATION ---
     if keys[pygame.K_w]:
@@ -728,7 +787,7 @@ while running:
                     merged_box = Box(
                         box.rect.x, box.rect.y,
                         box.rect.width, box.rect.height,
-                        "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BoxWithWheels.png"
+                        "Charlotte/BackgroundAssets/BoxWithWheels.png"
                     )
                     new_boxes.append(merged_box)
                     merged = True
@@ -756,12 +815,12 @@ while running:
     # --- SPAWN ---
     if not box_spawned:
         boxes.append(Box(600, -100, 128, 128,
-            "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BigBoxLevel1 .png"))
+            "Charlotte/BackgroundAssets/BigBoxLevel1 .png"))
         box_spawned = True
 
     if not trolley_spawned:
         trolleys.append(Trolley(800, -100, 128, 128,
-            "Q:/Global game Jam/Veilshift/Charlotte/BackgroundAssets/BoxTrolly.png"))
+            "Charlotte/BackgroundAssets/BoxTrolly.png"))
         trolley_spawned = True
 
     # --- UPDATE BOXES / TROLLEYS ---
@@ -791,8 +850,22 @@ while running:
             if DEBUG or is_in_light(trolley.rect, player.center, facing_angle):
                 trolley.draw(screen)
 
-    # ✅ ALWAYS DRAW DOOR (IMPORTANT FIX)
-    pressure_plate.draw(screen, mask=current_mask)
+    # ALWAYS DRAW DOOR (IMPORTANT FIX)
+    pressure_plate.draw(
+    screen,
+    mask=current_mask,
+    player_center=player.center,
+    facing_angle=facing_angle
+)
+    # --- END CREDITS TRIGGER ---
+    if (
+        pressure_plate.active
+        and player.colliderect(pressure_plate.door_rect)
+        and is_in_light(pressure_plate.door_rect, player.center, facing_angle)
+        and not show_end_credits
+    ):
+        show_end_credits = True
+
 
     # --- PLAYER ---
     img = current_player_img

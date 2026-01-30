@@ -38,7 +38,7 @@ class EndCredits:
     - Simple, stable radial spotlight
     """
 
-    def __init__(self, screen, player_img=None, font_path="Muneeb\Veilshift\assets\Fonts"):
+    def __init__(self, screen, player_img=None, font_path=None):
         self.screen = screen
         self.w, self.h = screen.get_size()
 
@@ -51,10 +51,10 @@ class EndCredits:
             ("VEILSHIFT", ""),
             ("A GAME JAM EXPERIENCE", ""),
             ("", ""),
-            ("CREATED BY", ""),
-            ("PROGRAMMING & DESIGN", "YOUR NAME"),
-            ("ART & VISUALS", "YOUR NAME"),
-            ("MUSIC & SOUND", "COMPOSER NAME"),
+            ("CREATED BY", "Symphonix112"),
+            ("PROGRAMMING & DESIGN", "Symphonix112, Imposterman200, MuneebDeveloperz"),
+            ("ART & VISUALS", "rxcrcxke(everything else), NUR230002203(lever)"),
+            ("SOUND Effects", "Symphonix112"),
             ("", ""),
             ("THANK YOU FOR PLAYING", ""),
             ("END OF TRANSMISSION", ""),
