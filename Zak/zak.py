@@ -2,6 +2,7 @@ import pygame
 import sys
 import math
 import random
+from pathlib import Path
 
 pygame.init()
 
@@ -35,6 +36,38 @@ def load_background(path):
     """Load background and scale to full screen."""
     img = pygame.image.load(path).convert()  # convert() for performance
     return pygame.transform.scale(img, (WIDTH, HEIGHT))
+
+def game_over_screen():
+    font = pygame.font.SysFont(None, 72)
+    small_font = pygame.font.SysFont(None, 36)
+
+    while True:
+        screen.fill((0, 0, 0))  # black background
+
+        # Draw main "You Died" text
+        text = font.render("YOU DIED", True, (255, 0, 0))
+        text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 50))
+        screen.blit(text, text_rect)
+
+        # Draw instructions
+        instr = small_font.render("Press ENTER to restart or ESCAPE to quit", True, (255, 255, 255))
+        instr_rect = instr.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 30))
+        screen.blit(instr, instr_rect)
+
+        pygame.display.flip()
+        clock.tick(FPS)
+
+        # Handle events
+        for e in pygame.event.get():
+            if e.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if e.type == pygame.KEYDOWN:
+                if e.key == pygame.K_RETURN:  # Restart
+                    return True
+                elif e.key == pygame.K_ESCAPE:  # Quit
+                    pygame.quit()
+                    sys.exit()
 
 # ---------------- COLORS ----------------
 MASK_INFO = {
@@ -78,13 +111,13 @@ PLAYER_SPRITES = {
     MASKLESS: {
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Veilshift/Charlotte/PlayerSprites/PlayerIdleNoMask.png"
+                "Charlotte/PlayerSprites/PlayerIdleNoMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Q:/Veilshift/Veilshift/Charlotte/PlayerSprites/PlayerRunningNoMask.png"
+                "Charlotte/PlayerSprites/PlayerRunningNoMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -93,13 +126,13 @@ PLAYER_SPRITES = {
     0: {  # Spectral mask
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerIdlePlatformMask.png"
+                "Charlotte\PlayerSprites\PlayerIdlePlatformMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Veilshift/Charlotte/PlayerSprites/PlayerRunningPlatformMask.png"
+                "Charlotte\PlayerSprites\PlayerRunningPlatformMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -108,13 +141,13 @@ PLAYER_SPRITES = {
     1: {  # Physical mask
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerIdleAttackMask.png"
+                "Charlotte\PlayerSprites\PlayerIdleAttackMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerRunningAttackMask.png"
+                "Charlotte\PlayerSprites\PlayerRunningAttackMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -123,13 +156,13 @@ PLAYER_SPRITES = {
     2: {  # Puzzle mask
         "idle": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerIdlePuzzleMask.png"
+                "Charlotte\PlayerSprites\PlayerIdlePuzzleMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
         "run": pygame.transform.scale(
             pygame.image.load(
-                "Q:\Veilshift\Veilshift\Charlotte\PlayerSprites\PlayerRunningPuzzleMask.png"
+                "Charlotte\PlayerSprites\PlayerRunningPuzzleMask.png"
             ).convert_alpha(),
             (CUBE_SIZE, CUBE_SIZE)
         ),
@@ -150,8 +183,8 @@ def load_background(path):
 
 # Registry of backgrounds
 BACKGROUNDS = {
-    BACKGROUND_1: load_background("Q:\Veilshift\Veilshift\Charlotte\Backgrounds\BackgroundA.png")
-    # BACKGROUND_2: load_background("Q:/Veilshift/Veilshift/Charlotte/BackgroundB.png"),
+    BACKGROUND_1: load_background("Charlotte\Backgrounds\BackgroundA.png")
+    # BACKGROUND_2: load_background("Charlotte/BackgroundB.png"),
     # BACKGROUND_3: load_background("Q:/Veilshift/Veilshift/Charlotte/BackgroundC.png"),
 }
 
@@ -189,9 +222,9 @@ HINT_COUNTS = {
 }
 
 HINT_IMAGES = {
-    "Red": pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\Red.png").convert_alpha(),
-    "Green": pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\Green.png").convert_alpha(),
-    "Blue": pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\Blue.png").convert_alpha(),
+    "Red": pygame.image.load("Charlotte\Red.png").convert_alpha(),
+    "Green": pygame.image.load("Charlotte\Green.png").convert_alpha(),
+    "Blue": pygame.image.load("Charlotte\Blue.png").convert_alpha(),
 }
 
 HINT_POSITIONS = {
@@ -201,7 +234,7 @@ HINT_POSITIONS = {
 }
 
 # Enemy image
-enemy1_img = pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\ShadowMonster.png"
+enemy1_img = pygame.image.load("Charlotte\ShadowMonster.png"
 ).convert_alpha()
 enemy1_img = pygame.transform.scale(enemy1_img, (CUBE_SIZE, CUBE_SIZE))
 
@@ -229,9 +262,28 @@ ENEMY_DEBUG_COLOR_IDLE = (255, 255, 0, 60)   # yellow
 ENEMY_DEBUG_COLOR_ALERT = (255, 80, 80, 80) # red
 
 # ---------------- PLAYER ATTACK ----------------
-PLAYER_ATTACK_RANGE = 80
+PLAYER_ATTACK_RANGE = 50
 PLAYER_ATTACK_COOLDOWN = 20  # frames
+PLAYER_ATTACK_WIDTH = 100   # ← change this
+PLAYER_ATTACK_HEIGHT = 50   # ← and this
+PLAYER_ATTACK_OFFSET_Y = 25
 player_attack_timer = 0
+BLOOD_BEAM_DURATION = 8     # frames
+BLOOD_BEAM_COLOR = (120, 10, 10)
+BLOOD_BEAM_ALPHA_START = 180
+BLOOD_BEAM_THICKNESS = 14
+BLOOD_WAVE_AMOUNT = 4
+blood_beam_timer = 0
+blood_beam_rect = None
+
+# ---------------- PLAYER SCAN ----------------
+SCAN_COOLDOWN = 5 * FPS  # 5 seconds
+SCAN_DURATION = 1 * FPS  # 1 second highlight
+SCAN_COLOR = (100, 180, 255)  # light blue
+
+scan_timer = 0
+scan_radius = 0
+scan_active = False
 
 # ---------------- IN-GAME BOX/TROLLEY MANAGEMENT ----------------
 boxes = []
@@ -240,6 +292,10 @@ box_spawned = False
 trolley_spawned = False
 player_on_box = None
 player_on_trolley = None
+
+# Ghost Stuff
+blue_flash_timer = 0
+BLUE_FLASH_DURATION = int(0.5 * FPS)  # 0.5 seconds in frames
 
 # ---------------- PLATFORM ----------------
 class Platform:
@@ -455,16 +511,16 @@ def get_player_attack_rect():
     if facing_right:
         return pygame.Rect(
             player.right,
-            player.centery - 20,
-            PLAYER_ATTACK_RANGE,
-            40
+            player.centery - PLAYER_ATTACK_OFFSET_Y,
+            PLAYER_ATTACK_WIDTH,
+            PLAYER_ATTACK_HEIGHT
         )
     else:
         return pygame.Rect(
-            player.left - PLAYER_ATTACK_RANGE,
-            player.centery - 20,
-            PLAYER_ATTACK_RANGE,
-            40
+            player.left - PLAYER_ATTACK_WIDTH,
+            player.centery - PLAYER_ATTACK_OFFSET_Y,
+            PLAYER_ATTACK_WIDTH,
+            PLAYER_ATTACK_HEIGHT
         )
 
 # ---------------- LIGHT ----------------
@@ -603,6 +659,8 @@ class Enemy:
         self.alerted = False
         self.health = ENEMY_MAX_HEALTH
         self.dead = False
+        self.death_timer = 30   # frames
+        self.dying = False
 
     def can_see_player(self, pos):
         dx, dy = pos[0] - self.rect.centerx, pos[1] - self.rect.centery
@@ -625,15 +683,25 @@ class Enemy:
         self.vel_x = ENEMY_CHASE_SPEED if self.facing_right else -ENEMY_CHASE_SPEED
 
     def take_damage(self, dmg):
-        if self.dead:
+        if self.dead or self.dying:
             return
+
         self.health -= dmg
         if self.health <= 0:
-            self.dead = True
+            self.dying = True
+            self.vel_x = 0
+            self.vel_y = -6
 
     def update(self, player):
-        if self.dead:
+        if self.dying:
+            self.vel_y = min(self.vel_y + ENEMY_GRAVITY, ENEMY_MAX_FALL)
+            self.rect.y += self.vel_y
+            self.death_timer -= 1
+
+            if self.death_timer <= 0:
+                self.dead = True
             return
+
         global player_health, damage_timer
 
         self.alerted = self.can_see_player(player.center)
@@ -651,12 +719,20 @@ class Enemy:
     def draw_body(self, vision_poly):
         if self.dead:
             return
+
         if current_mask == 3:
             return
+
         if current_mask == 1 and point_in_polygon(self.rect.center, vision_poly):
             img = enemy1_img
             if not self.facing_right:
                 img = pygame.transform.flip(enemy1_img, True, False)
+
+            if self.dying:
+                alpha = int(255 * (self.death_timer / 30))
+                img = img.copy()
+                img.set_alpha(alpha)
+
             screen.blit(img, self.rect.topleft)
 
     def draw_eyes(self):
@@ -690,7 +766,7 @@ class Ghost:
 
         # Load a ghost image (or fallback to white rectangle)
         try:
-            self.image = pygame.image.load("Q:\Veilshift\Veilshift\Charlotte\GhostSprite.png").convert_alpha()
+            self.image = pygame.image.load("Charlotte\GhostSprite.png").convert_alpha()
             self.image = pygame.transform.scale(self.image, (CUBE_SIZE, CUBE_SIZE))
         except:
             self.image = None
@@ -704,6 +780,14 @@ class Ghost:
         if not self.visible:
             return
 
+        # Only update movement if player has Spectral mask
+        if current_mask != 0:
+            return
+
+        # Only move if not in player's light cone
+        if is_in_light(self.rect, player.center, facing_angle):
+            return
+
         if self.stunned_timer > 0:
             self.stunned_timer -= 1
             return
@@ -711,27 +795,23 @@ class Ghost:
         # Determine direction the ghost is facing based on player position
         self.facing_right = player.centerx > self.rect.centerx
 
-        # Check if player is in vision
-        vision_poly = self.get_vision_polygon()
-        player_in_sight = point_in_polygon(player.center, vision_poly)
+        # Move toward player
+        dx = player.centerx - self.rect.centerx
+        dy = player.centery - self.rect.centery
+        distance = math.hypot(dx, dy)
+        if distance > 0:
+            dx /= distance
+            dy /= distance
+            speed = 1.5
+            self.rect.x += int(dx * speed)
+            self.rect.y += int(dy * speed)
 
-        if player_in_sight:
-            # Move toward player
-            dx = player.centerx - self.rect.centerx
-            dy = player.centery - self.rect.centery
-            distance = math.hypot(dx, dy)
-            if distance > 0:
-                dx /= distance
-                dy /= distance
-                speed = 3
-                self.rect.x += int(dx * speed)
-                self.rect.y += int(dy * speed)
-
-            # Collision with player triggers stun and shake
-            if self.rect.colliderect(player):
-                self.visible = False
-                self.shake_timer = self.shake_duration
-                self.stunned_timer = self.stun_duration
+        if self.rect.colliderect(player):
+            self.visible = False
+            self.shake_timer = self.shake_duration
+            self.stunned_timer = self.stun_duration
+            global blue_flash_timer
+            blue_flash_timer = BLUE_FLASH_DURATION
 
     def get_vision_polygon(self):
         """Return a polygon representing the ghost's vision cone."""
@@ -751,12 +831,15 @@ class Ghost:
         return points
 
     def draw(self, shake_offset=(0,0)):
-        if self.visible and current_mask == 0:
-            pos = (self.rect.x + shake_offset[0], self.rect.y + shake_offset[1])
-            if self.image:
-                screen.blit(self.image, pos)
-            else:
-                pygame.draw.rect(screen, (200,200,255), (*pos, self.rect.width, self.rect.height))
+        # Only visible if player has spectral mask
+        if not self.visible or current_mask != 0:
+            return
+
+        pos = (self.rect.x + shake_offset[0], self.rect.y + shake_offset[1])
+        if self.image:
+            screen.blit(self.image, pos)
+        else:
+            pygame.draw.rect(screen, (200, 200, 255), (*pos, self.rect.width, self.rect.height))
 
     def apply_shake(self):
         """Return an offset tuple (x, y) for screen shake."""
@@ -794,27 +877,38 @@ while running:
 
     facing_angle += (target_angle - facing_angle) * 0.25
 
-    # -------- EVENTS --------
     for e in pygame.event.get():
         if e.type == pygame.QUIT:
             running = False
+
         if e.type == pygame.KEYDOWN:
+
             if e.key == pygame.K_ESCAPE:
                 running = False
+
             if e.key == pygame.K_1: current_mask = MASKLESS
             if e.key == pygame.K_2: current_mask = 0
             if e.key == pygame.K_3: current_mask = 1
             if e.key == pygame.K_4: current_mask = 2
-            if e.key == pygame.K_F3: DEBUG = not DEBUG
-            # -------- PLAYER ATTACK --------
+
+            # -------- PLAYER ATTACK (PHYSICAL MASK ONLY) --------
             if e.key == pygame.K_q and player_attack_timer <= 0 and player_stunned_timer <= 0:
-                if current_mask ==1:
+                if current_mask == 1:
                     attack_rect = get_player_attack_rect()
 
                     if attack_rect.colliderect(enemy.rect) and not enemy.dead:
-                        enemy.take_damage(enemy.health)  # one-hit kill
+                        enemy.take_damage(enemy.health)
 
                     player_attack_timer = PLAYER_ATTACK_COOLDOWN
+
+                    # ---- BLOOD BEAM SPAWN ----
+                    blood_beam_timer = BLOOD_BEAM_DURATION
+                    blood_beam_rect = attack_rect.copy()
+
+            if e.key == pygame.K_r and current_mask == 0 and scan_timer <= 0:  # Spectral mask = 0
+                scan_timer = SCAN_COOLDOWN
+                scan_radius = 0
+                scan_active = True
 
             # TAP E to open puzzle only if close and has puzzle mask
             if e.key == pygame.K_e:
@@ -879,7 +973,7 @@ while running:
 
     # --- BOX SPAWN ---
     if not box_spawned and puzzle_values == PUZZLE_SOLUTION:
-        box_image_path = "Veilshift/Charlotte/BackgroundAssets/BigBoxLevel1 .png"
+        box_image_path = "Charlotte\BackgroundAssets\BigBoxLevel1 .png"
         box_x = 600
         box_y = 200  # underneath roof
         boxes.append(Box(box_x, box_y, 128, 128, box_image_path))
@@ -887,7 +981,7 @@ while running:
 
     # --- TROLLEY SPAWN ---
     if not trolley_spawned:
-        trolley_image_path = "Veilshift/Charlotte/BackgroundAssets/BoxTrolly.png"
+        trolley_image_path = "Charlotte/BackgroundAssets/BoxTrolly.png"
         trolley_y = 680 - 128  # sit on floor
         trolleys.append(Trolley(600, trolley_y, 128, 128, trolley_image_path))
         trolley_spawned = True
@@ -938,18 +1032,46 @@ while running:
     else:
         jump_held = False
 
-    # -------- DAMAGE COOLDOWN --------
+    # -------- COOLDOWNS --------
     if damage_timer > 0:
         damage_timer -= 1
 
-    # Player attack cd
     if player_attack_timer > 0:
         player_attack_timer -= 1
+    
+    if blood_beam_timer > 0:
+        blood_beam_timer -= 1
+
+    if scan_timer > 0:
+        scan_timer -= 1
 
     # -------- PLAYER DEATH --------
     if player_health <= 0:
-        print("Player died")
-        running = False
+        restart = game_over_screen()  # Show death screen
+        if restart:
+            # Reset everything
+            player_health = MAX_HEALTH
+            player.topleft = (150, 550)
+            vel_x, vel_y = 0, 0
+            facing_right = True
+            ghost.rect.topleft = (400, 300)
+            ghost.visible = True
+            ghost.stunned_timer = 0
+            ghost.shake_timer = 0
+            boxes.clear()
+            trolleys.clear()
+            box_spawned = False
+            trolley_spawned = False
+            puzzle_open = False
+            puzzle_values = [0, 0, 0, 0]
+            blood_beam_timer = 0
+            blood_beam_rect = None
+            scan_timer = 0
+            scan_active = False
+            scan_radius = 0
+            blue_flash_timer = 0
+            running = True
+            continue
 
     enemy.update(player)
     ghost.update(player)
@@ -1008,7 +1130,8 @@ while running:
     enemy.draw_body(vision_poly)
     enemy.draw_eyes()
 
-    ghost.draw(shake_offset=(shake_offset_x, shake_offset_y))
+    if current_mask == 0 and is_in_light(ghost.rect, player.center, facing_angle):
+        ghost.draw(shake_offset=(shake_offset_x, shake_offset_y))
 
     # Draw puzzle trigger (white box) only if close and has puzzle mask
     dx = player.centerx - puzzle_trigger.rect.centerx
@@ -1038,6 +1161,48 @@ while running:
     player_pos = (player.topleft[0] + shake_offset_x, player.topleft[1] + shake_offset_y)
     screen.blit(img_to_draw, player_pos)
 
+    # -------- DRAW PLAYER ATTACK HITBOX --------
+    if player_attack_timer > PLAYER_ATTACK_COOLDOWN - 5:
+        attack_rect = get_player_attack_rect()
+        pygame.draw.rect(screen, (255, 50, 50), attack_rect, 2)
+
+    # -------- DRAW BLOOD STREAM BEAM --------
+    if blood_beam_timer > 0 and blood_beam_rect and current_mask == 1:
+        beam = blood_beam_rect
+
+        SHRINK_SPEED = 12
+
+        if facing_right:
+            beam.width = max(0, beam.width - SHRINK_SPEED)
+        else:
+            beam.x += SHRINK_SPEED
+            beam.width = max(0, beam.width - SHRINK_SPEED)
+
+        # Make beam thinner and centered vertically
+        thin_rect = pygame.Rect(
+            beam.x,
+            beam.centery - BLOOD_BEAM_THICKNESS // 2,
+            beam.width,
+            BLOOD_BEAM_THICKNESS
+        )
+
+        # Organic wobble
+        thin_rect.y += random.randint(-BLOOD_WAVE_AMOUNT, BLOOD_WAVE_AMOUNT)
+
+        # Draw solid blood stream
+        pygame.draw.rect(screen, BLOOD_BEAM_COLOR, thin_rect)
+
+        # Blood droplets
+        for _ in range(3):
+            drop_x = random.randint(thin_rect.left, thin_rect.right)
+            drop_y = random.randint(thin_rect.top - 6, thin_rect.bottom + 6)
+            pygame.draw.circle(
+                screen,
+                (90, 0, 0),
+                (drop_x, drop_y),
+                random.randint(2, 4)
+            )
+
     # -------- HEALTH BAR --------
     BAR_X = 20
     BAR_Y = 20
@@ -1053,6 +1218,62 @@ while running:
 
     # Border
     pygame.draw.rect(screen, (255, 255, 255), (BAR_X, BAR_Y, BAR_WIDTH, BAR_HEIGHT), 2)
+
+    if blue_flash_timer > 0:
+        flash_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        alpha = 100  # adjust transparency
+        flash_surf.fill((50, 50, 255, alpha))
+        screen.blit(flash_surf, (0, 0))
+        blue_flash_timer -= 1
+
+    # --- SCAN WAVE ---
+    if scan_active:
+        # Expand the wave
+        scan_radius += 12  # pixels per frame, adjust speed as needed
+
+        # Create a transparent circle surface
+        scan_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        pygame.draw.circle(scan_surf, SCAN_COLOR + (50,), player.center, int(scan_radius), 4)
+        screen.blit(scan_surf, (0, 0))
+
+        # Highlight platforms in radius
+        for p in platforms:
+            if p.active():
+                dx = p.rect.centerx - player.centerx
+                dy = p.rect.centery - player.centery
+                dist = math.hypot(dx, dy)
+                if dist <= scan_radius:
+                    # Draw exact shape (rectangle) as polygon
+                    points = [
+                        p.rect.topleft,
+                        p.rect.topright,
+                        p.rect.bottomright,
+                        p.rect.bottomleft
+                    ]
+                    pygame.draw.polygon(screen, SCAN_COLOR, points, 3)  # 3 = line thickness
+
+        if ghost.visible:
+            dx = ghost.rect.centerx - player.centerx
+            dy = ghost.rect.centery - player.centery
+            dist = math.hypot(dx, dy)
+            if dist <= scan_radius:
+                # Draw exact shape of ghost (rectangle or polygon)
+                points = [
+                    ghost.rect.topleft,
+                    ghost.rect.topright,
+                    ghost.rect.bottomright,
+                    ghost.rect.bottomleft
+                ]
+                pygame.draw.polygon(screen, SCAN_COLOR, points, 3)
+
+        if scan_active:
+            scan_radius += 12
+            scan_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            pygame.draw.circle(scan_surf, SCAN_COLOR + (50,), player.center, int(scan_radius), 4)
+            screen.blit(scan_surf, (0,0))
+            if scan_radius > max(WIDTH, HEIGHT):
+                scan_active = False
+                scan_radius = 0
 
     pygame.display.flip()
 

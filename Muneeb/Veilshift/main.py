@@ -14,7 +14,7 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | pygame.FULLSCR
 clock = pygame.time.Clock()
 
 # ---------------- PLAYER ----------------
-player_img = pygame.image.load("assets/PlayerIdleNoMask.png").convert_alpha()
+player_img = pygame.image.load("Charlotte\PlayerSprites\PlayerIdleNoMask.png").convert_alpha()
 player_img = pygame.transform.scale(player_img, (CUBE_SIZE, CUBE_SIZE))
 player = Player((150, 550, CUBE_SIZE, CUBE_SIZE), player_img)
 player.current_mask = 1
