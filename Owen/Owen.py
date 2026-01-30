@@ -572,26 +572,36 @@ class PressurePlate:
         self.active = False
 
     def update(self, boxes):
-        # --- Check if any box is on the plate ---
         self.active = False
+
         for box in boxes:
-            if self.rect.colliderect(box.hit_rect):
+            # 1️⃣ Must be touching the pressure plate hitbox
+            if not self.rect.colliderect(box.hit_rect):
+                continue
+
+            # 2️⃣ Must be the BoxWithWheels sprite
+            # This assumes box.image_path exists (which it does in your Box class)
+            if hasattr(box, "image_path") and "BoxWithWheels.png" in box.image_path:
                 self.active = True
                 break
 
-    def draw(self, screen, mask):
-        # --- Plate visible only in puzzle mask ---
+
+    def draw(self, screen, mask, player_center, facing_angle):
+        # --- PRESSURE PLATE ---
         if mask == 2:
-            screen.blit(self.image, (self.image_offset_x, self.image_offset_y))
-            if DEBUG:
-                pygame.draw.rect(screen, (255, 0, 0), self.rect, 2)  # show hitbox for debugging
+            if DEBUG or is_in_light(self.rect, player_center, facing_angle):
+                screen.blit(self.image, (self.image_offset_x, self.image_offset_y))
 
-        # --- Door appears ONLY when plate is active ---
+            if DEBUG:
+                pygame.draw.rect(screen, (255, 0, 0), self.rect, 2)
+
+        # --- DOOR ---
         if self.active:
-            screen.blit(self.door_image, (self.door_image_offset_x, self.door_image_offset_y))
-            if DEBUG:
-                pygame.draw.rect(screen, (0, 0, 255), self.door_rect, 2)  # show hitbox for debugging
+            if DEBUG or is_in_light(self.door_rect, player_center, facing_angle):
+                screen.blit(self.door_image, (self.door_image_offset_x, self.door_image_offset_y))
 
+            if DEBUG:
+                pygame.draw.rect(screen, (0, 0, 255), self.door_rect, 2)
 
 
 pressure_plate = PressurePlate(
@@ -791,8 +801,14 @@ while running:
             if DEBUG or is_in_light(trolley.rect, player.center, facing_angle):
                 trolley.draw(screen)
 
-    # ✅ ALWAYS DRAW DOOR (IMPORTANT FIX)
-    pressure_plate.draw(screen, mask=current_mask)
+    # ALWAYS DRAW DOOR (IMPORTANT FIX)
+    pressure_plate.draw(
+    screen,
+    mask=current_mask,
+    player_center=player.center,
+    facing_angle=facing_angle
+)
+
 
     # --- PLAYER ---
     img = current_player_img
